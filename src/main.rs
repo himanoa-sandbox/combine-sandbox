@@ -1,4 +1,5 @@
 
+#[derive(Debug)]
 enum HeadingLevel {
     Level1,
     Level2,
@@ -6,6 +7,7 @@ enum HeadingLevel {
     Level4,
 }
 
+#[derive(Debug)]
 enum ListLevel {
     Level1,
     Level2,
@@ -14,6 +16,7 @@ enum ListLevel {
     Level5,
 }
 
+#[derive(Debug)]
 enum FootnoteType {
     Note,
     Tip,
@@ -22,10 +25,23 @@ enum FootnoteType {
     Caution
 }
 
+#[derive(Debug)]
 enum VideoProvider {
     Youtube,
 }
 
+#[derive(Debug)]
+struct TableColumn { 
+    name: String
+}
+
+#[derive(Debug)]
+struct TableRow { 
+    children: Node
+}
+
+
+#[derive(Debug)]
 enum Node {
     // Paragraph section
     Value(String),
@@ -76,8 +92,14 @@ enum Node {
     InlineImage { src:String, caption:Option<String> },
     // Video section
     Video { id:String, provider: VideoProvider },
-
+    // Code section
+    InlineCode { children: Box<Node> },
+    CodeBlock { children: Box<Node>, title: Option<String>, file_type: Option<String> },
+    // Unsupport CodeBlockWithSpeachBaloon
+    Block { children: Box<Node>, title: Option<Box<Node>> },
+    Table { columns: Vec<TableColumn>, rows: Vec<TableRow>, title: Option<String> }
 }
+
 
 fn main() -> () {
     dbg!("{:?}", "hello");
