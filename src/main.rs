@@ -178,5 +178,14 @@ mod tests {
                 id: None
             }
         );
+
+        assert_eq!(
+            parse_heading("===== Heading\nadfasdf").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Level4,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
     }
 }
