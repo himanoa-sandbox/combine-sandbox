@@ -1,14 +1,18 @@
+use anyhow::{Result, anyhow};
+use combine::*;
+use combine::{many, token, skip_many};
 
-#[derive(Debug)]
-enum HeadingLevel {
+#[derive(Debug, PartialEq, Eq)]
+pub enum HeadingLevel {
+    Title,
     Level1,
     Level2,
     Level3,
     Level4,
 }
 
-#[derive(Debug)]
-enum ListLevel {
+#[derive(Debug, PartialEq, Eq)]
+pub enum ListLevel {
     Level1,
     Level2,
     Level3,
@@ -16,8 +20,8 @@ enum ListLevel {
     Level5,
 }
 
-#[derive(Debug)]
-enum FootnoteType {
+#[derive(Debug, PartialEq, Eq)]
+pub enum FootnoteType {
     Note,
     Tip,
     Important,
@@ -25,24 +29,24 @@ enum FootnoteType {
     Caution
 }
 
-#[derive(Debug)]
-enum VideoProvider {
+#[derive(Debug, PartialEq, Eq)]
+pub enum VideoProvider {
     Youtube,
 }
 
-#[derive(Debug)]
-struct TableColumn { 
+#[derive(Debug, PartialEq, Eq)]
+pub struct TableColumn { 
     name: String
 }
 
-#[derive(Debug)]
-struct TableRow { 
+#[derive(Debug, PartialEq, Eq)]
+pub struct TableRow { 
     children: Node
 }
 
 
-#[derive(Debug)]
-enum Node {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Node {
     // Paragraph section
     Value(String),
     Paragraph { children: Box<Node> },
@@ -65,7 +69,7 @@ enum Node {
     // Unsupport Apostorofy
 
     // Document header section
-    Heading { level: HeadingLevel, children: Box<Node>, id: String},
+    Heading { level: HeadingLevel, children: Box<Node>, id: Option<String>},
     // Horizontal ruled line section
     HorizontalRuledLine,
     NextPage,
@@ -101,6 +105,78 @@ enum Node {
 }
 
 
+pub fn parse_heading(s: &str) -> Result<Node> {
+    let (head, remaining) = many::<Vec<_>, _, _>(token('=')).parse(s)?;
+    let (_, remaining) = skip_many(token(' ')).parse(remaining)?;
+    let (children, _remining) = many::<String, _, _>(parser::char::letter()).parse(remaining)?;
+
+    let level = match head.len() {
+        1 => HeadingLevel::Title,
+        2 => HeadingLevel::Level1,
+        3 => HeadingLevel::Level2,
+        4 => HeadingLevel::Level3,
+        5 => HeadingLevel::Level4,
+        0 => { return Err(anyhow!("parse error")) },
+        _ => { return Err(anyhow!("NotHeading")) }
+    };
+    
+    Ok(Node::Heading { level, children: Box::new(Node::Value(children)), id: None})
+}
+
 fn main() -> () {
     dbg!("{:?}", "hello");
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_heading() {
+        assert_eq!(
+            parse_heading("= Heading").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Title,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
+
+        assert_eq!(
+            parse_heading("== Heading").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Level1,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
+
+        assert_eq!(
+            parse_heading("=== Heading").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Level2,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
+
+        assert_eq!(
+            parse_heading("==== Heading").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Level3,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
+
+        assert_eq!(
+            parse_heading("===== Heading").unwrap(),
+            Node::Heading {
+                level: HeadingLevel::Level4,
+                children: Box::new(Node::Value("Heading".to_string())),
+                id: None
+            }
+        );
+    }
 }
