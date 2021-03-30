@@ -1,6 +1,8 @@
-use anyhow::{Result, anyhow};
+#[macro_use]
 use combine::*;
-use combine::{many, token, skip_many};
+use combine::{many1, token, Parser, choice};
+use combine::parser::char::spaces;
+use combine::parser::char::letter;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeadingLevel {
@@ -105,22 +107,52 @@ pub enum Node {
 }
 
 
-pub fn parse_heading(s: &str) -> Result<Node> {
-    let (head, remaining) = many::<Vec<_>, _, _>(token('=')).parse(s)?;
-    let (_, remaining) = skip_many(token(' ')).parse(remaining)?;
-    let (children, _remining) = many::<String, _, _>(parser::char::letter()).parse(remaining)?;
 
-    let level = match head.len() {
-        1 => HeadingLevel::Title,
-        2 => HeadingLevel::Level1,
-        3 => HeadingLevel::Level2,
-        4 => HeadingLevel::Level3,
-        5 => HeadingLevel::Level4,
-        0 => { return Err(anyhow!("parse error")) },
-        _ => { return Err(anyhow!("NotHeading")) }
-    };
-    
-    Ok(Node::Heading { level, children: Box::new(Node::Value(children)), id: None})
+parser!{
+    fn expr[Input]()(Input) -> Node
+    where [Input: Stream<Token = char>]
+    {
+        expr_()
+    }
+}
+
+pub fn expr_<Input>() -> impl Parser<Input, Output = Node>
+    where Input: Stream<Token = char>,
+          Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice((
+        heading_expr(),
+        value_expr()
+    ))
+}
+
+
+
+pub fn value_expr<Input>() -> impl Parser<Input, Output = Node>
+    where Input: Stream<Token = char>,
+          Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    return many1::<String, _, _>(letter()).map(|s| Node::Value(s))
+}
+
+pub fn heading_expr<Input>() -> impl Parser<Input, Output = Node>
+    where Input: Stream<Token = char>,
+          Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many1::<Vec<char>, _, _>(token('='))
+        .skip(spaces().silent())
+        .and(expr())
+        .map(|(heading, children)| {
+            let level = match heading.len() {
+                1 => HeadingLevel::Title,
+                2 => HeadingLevel::Level1,
+                3 => HeadingLevel::Level2,
+                4 => HeadingLevel::Level3,
+                5 => HeadingLevel::Level4,
+                _ => HeadingLevel::Level4
+            };
+            Node::Heading { id: None, children: Box::new(children), level }
+        })
 }
 
 fn main() -> () {
@@ -134,8 +166,9 @@ mod tests {
 
     #[test]
     fn test_parse_heading() {
+        let (actual, _) = expr().parse("= Heading").unwrap();
         assert_eq!(
-            parse_heading("= Heading").unwrap(),
+            actual,
             Node::Heading {
                 level: HeadingLevel::Title,
                 children: Box::new(Node::Value("Heading".to_string())),
@@ -143,8 +176,9 @@ mod tests {
             }
         );
 
+        let (actual, _) = expr().parse("== Heading").unwrap();
         assert_eq!(
-            parse_heading("== Heading").unwrap(),
+            actual,
             Node::Heading {
                 level: HeadingLevel::Level1,
                 children: Box::new(Node::Value("Heading".to_string())),
@@ -152,8 +186,9 @@ mod tests {
             }
         );
 
+        let (actual, _) = expr().parse("=== Heading").unwrap();
         assert_eq!(
-            parse_heading("=== Heading").unwrap(),
+            actual,
             Node::Heading {
                 level: HeadingLevel::Level2,
                 children: Box::new(Node::Value("Heading".to_string())),
@@ -161,8 +196,9 @@ mod tests {
             }
         );
 
+        let (actual, _) = expr().parse("==== Heading").unwrap();
         assert_eq!(
-            parse_heading("==== Heading").unwrap(),
+            actual,
             Node::Heading {
                 level: HeadingLevel::Level3,
                 children: Box::new(Node::Value("Heading".to_string())),
@@ -170,17 +206,10 @@ mod tests {
             }
         );
 
-        assert_eq!(
-            parse_heading("===== Heading").unwrap(),
-            Node::Heading {
-                level: HeadingLevel::Level4,
-                children: Box::new(Node::Value("Heading".to_string())),
-                id: None
-            }
-        );
 
+        let (actual, _) = expr().parse("====== Heading").unwrap();
         assert_eq!(
-            parse_heading("===== Heading\nadfasdf").unwrap(),
+            actual,
             Node::Heading {
                 level: HeadingLevel::Level4,
                 children: Box::new(Node::Value("Heading".to_string())),
