@@ -1,5 +1,5 @@
 [package]
-name = "combine"
+name = "combine-sandbox"
 version = "0.1.0"
 authors = ["himanoa <matsunoappy@gmail.com>"]
 edition = "2018"
@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 combine="4.5"
+anyhow="1.0"
