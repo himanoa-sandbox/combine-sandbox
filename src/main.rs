@@ -1,8 +1,8 @@
-#[macro_use]
 use combine::*;
-use combine::{many1, token, Parser, choice};
+use combine::{many1, token, Parser,count_min_max} ;
 use combine::parser::char::spaces;
-use combine::parser::char::letter;
+use combine::error::ParseError;
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeadingLevel {
@@ -43,51 +43,58 @@ pub struct TableColumn {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TableRow { 
-    children: Node
+    children: Box<Block>
 }
 
 
+
 #[derive(Debug, PartialEq, Eq)]
-pub enum Node {
+pub enum Block {
+    Paragraph { children: Vec<Inline> },
+    Heading { level: HeadingLevel, children: Vec<Inline>, id: Option<String>},
+    // Horizontal ruled line section
+    HorizontalRuledLine,
+    NextPage,
+    // List section
+    UnorderdList { children: Vec<Inline> },
+    UnorderdListItem { level: ListLevel, children: Vec<Inline> },
+    CheckList { children: Vec<Inline> },
+    CheclListItem { level: ListLevel, children: Vec<Inline>, checked: bool },
+    OrderdList { children: Vec<Inline> },
+    OrderdListItem { level: ListLevel, children: Vec<Inline> },
+    Label { children:Vec<Inline>, key: Vec<Inline> },
+    Qanda { question: Vec<Inline>, answer:Vec<Inline> },
+    CodeBlock { children: Vec<Inline>, title: Option<String>, file_type: Option<String> },
+    // Unsupport CodeBlockWithSpeachBaloon
+    Block { children: Vec<Inline>, title: Option<Vec<Inline>> },
+    Table { columns: Vec<TableColumn>, rows: Vec<TableRow>, title: Option<String> }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Inline {
     // Paragraph section
     Value(String),
-    Paragraph { children: Box<Node> },
-    Literal { children: Box<Node> },
-    DocumentTitle { children: Box<Node>},
-    Footnote { kind: FootnoteType, children: Box<Node> },
-    Lead { children: Box<Node> },
+    Literal { children: Box<Inline> },
+    Footnote { kind: FootnoteType, children: Box<Inline> },
+    Lead { children: Box<Inline> },
     // Text format section
 
-    Bold { children: Box<Node> },
-    Italic { children: Box<Node> },
-    Monospace { children: Box<Node> },
-    Marker { children: Box<Node> },
-    Underline { children: Box<Node> },
-    LineThrough { children: Box<Node> },
-    Big { children: Box<Node> },
+    Bold { children: Box<Inline> },
+    Italic { children: Box<Inline> },
+    Monospace { children: Box<Inline> },
+    Marker { children: Box<Inline> },
+    Underline { children: Box<Inline> },
+    LineThrough { children: Box<Inline> },
+    Big { children: Box<Inline> },
     // Unsupport Superscript
     // Unsupport Subscript
     // Unsupport Curvequote
     // Unsupport Apostorofy
 
-    // Document header section
-    Heading { level: HeadingLevel, children: Box<Node>, id: Option<String>},
-    // Horizontal ruled line section
-    HorizontalRuledLine,
-    NextPage,
-    // List section
-    UnorderdList { children: Box<Node> },
-    UnorderdListItem { level: ListLevel, children: Box<Node> },
-    CheckList { children: Box<Node> },
-    CheclListItem { level: ListLevel, children: Box<Node>, checked: bool },
-    OrderdList { children: Box<Node> },
-    OrderdListItem { level: ListLevel, children: Box<Node> },
     // Label section
-    Label { children:Box<Node>, key: Box<Node> },
-    Qanda { question: Box<Node>, answer:Box<Node> },
     // Link section
-    Link { href: String, children: Box<Node> },
-    Mail { to: String, children: Box<Node> },
+    Link { href: String, children: Box<Inline> },
+    Mail { to: String, children: Box<Inline> },
     // Unsupport LinkWithAttribute
     // Unsupport InlineAnchor
     // Unsupport InnerCrossReference
@@ -99,60 +106,66 @@ pub enum Node {
     // Video section
     Video { id:String, provider: VideoProvider },
     // Code section
-    InlineCode { children: Box<Node> },
-    CodeBlock { children: Box<Node>, title: Option<String>, file_type: Option<String> },
-    // Unsupport CodeBlockWithSpeachBaloon
-    Block { children: Box<Node>, title: Option<Box<Node>> },
-    Table { columns: Vec<TableColumn>, rows: Vec<TableRow>, title: Option<String> }
+    InlineCode { children: Box<Inline> },
 }
 
 
 
 parser!{
-    fn expr[Input]()(Input) -> Node
+    fn expr[Input]()(Input) -> Block
     where [Input: Stream<Token = char>]
     {
-        expr_()
+        block_expr()
     }
 }
 
-pub fn expr_<Input>() -> impl Parser<Input, Output = Node>
+pub fn block_expr<Input>() -> impl Parser<Input, Output = Block>
     where Input: Stream<Token = char>,
           Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((
-        heading_expr(),
-        value_expr()
-    ))
+    heading_expr()
+}
+
+pub fn inline_expr<Input>() -> impl Parser<Input, Output = Inline>
+    where Input: Stream<Token = char>,
+        Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+{
+    value_expr()
 }
 
 
-
-pub fn value_expr<Input>() -> impl Parser<Input, Output = Node>
+pub fn value_expr<Input>() -> impl Parser<Input, Output = Inline>
     where Input: Stream<Token = char>,
           Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    return many1::<String, _, _>(letter()).map(|s| Node::Value(s))
+    return many1::<String, _, _>(any()).map(|s| Inline::Value(s))
 }
 
-pub fn heading_expr<Input>() -> impl Parser<Input, Output = Node>
+pub fn heading_expr<Input>() -> impl Parser<Input, Output = Block>
     where Input: Stream<Token = char>,
           Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    many1::<Vec<char>, _, _>(token('='))
-        .skip(spaces().silent())
-        .and(expr())
-        .map(|(heading, children)| {
-            let level = match heading.len() {
-                1 => HeadingLevel::Title,
-                2 => HeadingLevel::Level1,
-                3 => HeadingLevel::Level2,
-                4 => HeadingLevel::Level3,
-                5 => HeadingLevel::Level4,
-                _ => HeadingLevel::Level4
-            };
-            Node::Heading { id: None, children: Box::new(children), level }
-        })
+    
+        many1::<Vec<char>, _, _>(token('='))
+            .and(many1::<String, _, _>(token(' ')))
+            .and(inline_expr())
+            .map(|((heading, spaces), children)| {
+                if heading.len() > 5 {
+                    let heading_raw = heading.iter().collect::<String>();
+                    return Block::Paragraph { children: vec![Inline::Value(heading_raw + spaces.as_str()), children] };
+                }
+                let level = match heading.len() {
+                    1 => HeadingLevel::Title,
+                    2 => HeadingLevel::Level1,
+                    3 => HeadingLevel::Level2,
+                    4 => HeadingLevel::Level3,
+                    5 => HeadingLevel::Level4,
+                    _ => {
+                        unreachable!()
+                    },
+                };
+                Block::Heading { id: None, children: vec![children], level }
+            })
 }
 
 fn main() -> () {
@@ -169,9 +182,9 @@ mod tests {
         let (actual, _) = expr().parse("= Heading").unwrap();
         assert_eq!(
             actual,
-            Node::Heading {
+            Block::Heading {
                 level: HeadingLevel::Title,
-                children: Box::new(Node::Value("Heading".to_string())),
+                children: vec![Inline::Value("Heading".to_string())],
                 id: None
             }
         );
@@ -179,9 +192,9 @@ mod tests {
         let (actual, _) = expr().parse("== Heading").unwrap();
         assert_eq!(
             actual,
-            Node::Heading {
+            Block::Heading {
                 level: HeadingLevel::Level1,
-                children: Box::new(Node::Value("Heading".to_string())),
+                children: vec![Inline::Value("Heading".to_string())],
                 id: None
             }
         );
@@ -189,9 +202,9 @@ mod tests {
         let (actual, _) = expr().parse("=== Heading").unwrap();
         assert_eq!(
             actual,
-            Node::Heading {
+            Block::Heading {
                 level: HeadingLevel::Level2,
-                children: Box::new(Node::Value("Heading".to_string())),
+                children: vec![Inline::Value("Heading".to_string())],
                 id: None
             }
         );
@@ -199,21 +212,29 @@ mod tests {
         let (actual, _) = expr().parse("==== Heading").unwrap();
         assert_eq!(
             actual,
-            Node::Heading {
+            Block::Heading {
                 level: HeadingLevel::Level3,
-                children: Box::new(Node::Value("Heading".to_string())),
+                children: vec![Inline::Value("Heading".to_string())],
                 id: None
             }
         );
 
 
+        let (actual, _) = expr().parse("===== Heading").unwrap();
+        assert_eq!(
+            actual,
+            Block::Heading {
+                level: HeadingLevel::Level4,
+                children: vec![Inline::Value("Heading".to_string())],
+                id: None
+            }
+        );
+
         let (actual, _) = expr().parse("====== Heading").unwrap();
         assert_eq!(
             actual,
-            Node::Heading {
-                level: HeadingLevel::Level4,
-                children: Box::new(Node::Value("Heading".to_string())),
-                id: None
+            Block::Paragraph {
+                children: vec![Inline::Value("====== ".to_string()), Inline::Value("Heading".to_string())],
             }
         );
     }
