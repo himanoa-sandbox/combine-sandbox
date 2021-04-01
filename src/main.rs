@@ -1,8 +1,8 @@
 use anyhow::Result;
 use combine::error::ParseError;
-use combine::parser::char::{newline, space, spaces, string};
+use combine::parser::char::{newline, space, string};
 use combine::*;
-use combine::{count_min_max, token, Parser};
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeadingLevel {
@@ -105,6 +105,7 @@ pub enum Block {
         rows: Vec<TableRow>,
         title: Option<String>,
     },
+    BlankBlock
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -186,24 +187,20 @@ pub enum Inline {
 }
 
 pub fn parse(s: &str) -> Result<Vec<Block>> {
-    let mut parser = block();
-
-    let mut parsed_blocks: Vec<Block> = vec![];
+    let mut parser = document();
 
     let trim_targets: &[_] = &['\n', ' '];
-    let mut rest = s.trim_start_matches(trim_targets);
+    let s  = s.trim_start_matches(trim_targets);
 
-    loop {
-        dbg!("{:?}", rest);
-        if rest == "" {
-            break;
-        }
-        let (b, s) = parser.parse(rest)?;
-        rest = s;
-        parsed_blocks.push(b);
-    }
+    return Ok(parser.parse(s).map(|(tokens, _)| tokens)?);
+}
 
-    return Ok(parsed_blocks);
+pub fn document<Input>() -> impl Parser<Input, Output = Vec<Block>>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many::<Vec<Block>, _, _>(block())
 }
 
 pub fn block<Input>() -> impl Parser<Input, Output = Block>
@@ -211,17 +208,27 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((heading_block(), paragraph_block()))
-        .skip(newline())
-        .skip(spaces())
+    choice((
+        heading_block(),
+        paragraph_block(),
+        count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
+    ))
 }
 
-pub fn inline<Input>() -> impl Parser<Input, Output = Inline>
+parser! {
+    fn inline[Input]()(Input) -> Inline
+    where
+        [Input: Stream<Token = char>] {
+            inline_()
+        }
+}
+
+pub fn inline_<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((line_break(), value()))
+    choice((value(), bold() /* italic(),*/ , line_break()))
 }
 
 pub fn line_break<Input>() -> impl Parser<Input, Output = Inline>
@@ -229,19 +236,36 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((
-        newline()
-            .and(count_min_max::<Vec<char>, _, _>(0, 1, any()))
-            .map(|(_, c)| {
-                if let Some(first) = c.first() {
-                    if *first == '\n' {
-                        return Inline::HardBreak;
-                    }
-                }
-                Inline::SoftBreak
-            }),
-        space().and(string("+\n")).map(|_| Inline::HardBreak),
-    ))
+    choice(
+        (
+            newline().and(not_followed_by(newline())).map(|_| Inline::SoftBreak),
+            space().and(string("+\n")).map(|_| Inline::HardBreak)
+        )
+    )
+}
+
+fn bold<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let symbol = '*';
+    skip_many(token(' ')).and(between(token(symbol), token(symbol), inline())).map(|(_, children)| {
+        Inline::Bold {
+            children: Box::new(children),
+        }
+    })
+}
+
+fn italic<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let symbol = '_';
+    between(token(symbol), token(symbol), inline()).map(|children| Inline::Italic {
+        children: Box::new(children),
+    })
 }
 
 pub fn value<Input>() -> impl Parser<Input, Output = Inline>
@@ -249,7 +273,11 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    return many1::<String, _, _>(satisfy(|c| c != '\n')).map(|s| Inline::Value(s));
+    let ignore_tokens: &_ = &['\n', '*', '_'];
+    return many1::<String, _, _>(satisfy(move |c| {
+        &ignore_tokens.iter().skip_while(|i| c != **i).count() == &0
+    }))
+    .map(|s| Inline::Value(s));
 }
 
 pub fn heading_block<Input>() -> impl Parser<Input, Output = Block>
@@ -290,9 +318,8 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((inline().map(|line_element| Block::Paragraph {
-        children: vec![line_element],
-    }),))
+    many1::<Vec<Inline>, _, _>(attempt(inline())).map(|children| Block::Paragraph { children })
+    // many1::<Vec<Inline>, _, _>(inline()).and(look_ahead(count_min_max::<String, _, _>(1, 2, newline())))
 }
 
 fn main() -> () {
@@ -316,15 +343,14 @@ mod tests {
     #[test]
     fn test_parse_function() {
         let asciidoc = "
-        == This is a Heading
+== This is a Heading
 
-        This is a Paragraph
+This is a Paragraph
 
-        == Foobar
+== Foobar
 
-        adfasdf
-
-        ";
+This is a *bold* text
+";
 
         let result = parse(asciidoc).unwrap();
         assert_eq!(
@@ -335,27 +361,34 @@ mod tests {
                     id: None,
                     children: vec![Inline::Value("This is a Heading".to_string())]
                 },
+                Block::BlankBlock,
                 Block::Paragraph {
                     children: vec![Inline::Value("This is a Paragraph".to_string())]
                 },
+                Block::BlankBlock,
                 Block::Heading {
                     level: HeadingLevel::Level1,
                     id: None,
                     children: vec![Inline::Value("Foobar".to_string())]
                 },
+                Block::BlankBlock,
                 Block::Paragraph {
-                    children: vec![Inline::Value("adfasdf".to_string())]
-                }
+                    children: vec![
+                        Inline::Value("This is a ".to_string()),
+                        Inline::Bold {
+                            children: Box::new(Inline::Value("bold".to_string()))
+                        },
+                        Inline::Value(" text".to_string()),
+                        Inline::SoftBreak,
+                    ]
+                },
             ]
         )
     }
     #[test]
     fn test_inline() {
-        let actual = inline().parse("\naadf").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::SoftBreak));
-
-        let actual = inline().parse("aadf").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::Value("aadf".to_string())));
+        let actual = inline().parse(" aadf").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::Value(" aadf".to_string())));
     }
 
     #[test]
@@ -438,6 +471,36 @@ mod tests {
     }
 
     #[test]
+    fn test_bold() {
+        let actual = bold().parse("*人間*").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::Bold {
+                children: Box::new(Inline::Value("人間".to_string()))
+            })
+        );
+
+        let actual = bold().parse("*人間*").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::Bold {
+                children: Box::new(Inline::Value("人間".to_string()))
+            })
+        );
+    }
+
+    #[test]
+    fn test_italic() {
+        let actual = italic().parse("_人間_").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::Italic {
+                children: Box::new(Inline::Value("人間".to_string()))
+            })
+        );
+    }
+
+    #[test]
     fn test_value() {
         let actual = value().parse("人間").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
@@ -445,23 +508,52 @@ mod tests {
 
     #[test]
     fn test_line_break() {
-        let actual = line_break().parse(" +\n").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::HardBreak));
-
-        let actual = line_break().parse("\n\n").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::HardBreak));
-
         let actual = line_break().parse("\n").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::SoftBreak));
+
+        let actual = line_break().parse("\n\n").is_err();
+        assert_eq!(actual, true);
+
+        let actual = line_break().parse(" +\n").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::HardBreak));
     }
 
     #[test]
     fn test_paragraph() {
+        let actual = paragraph_block().parse("人間 *a* 人間").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![
+                    Inline::Value("人間 ".to_string()),
+                    Inline::Bold{children: Box::new(Inline::Value("a".to_string()))},
+                    Inline::Value(" 人間".to_string())
+                ]
+            })
+        );
+
+        let actual = paragraph_block().parse("人間 ").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![
+                    Inline::Value("人間 ".to_string()),
+                ]
+            })
+        );
         let actual = paragraph_block().parse("人間").map(take_parse_result);
         assert_eq!(
             actual,
             Ok(Block::Paragraph {
                 children: vec![Inline::Value("人間".to_string())]
+            })
+        );
+
+        let actual = paragraph_block().parse("人間\n").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![Inline::Value("人間".to_string()), Inline::SoftBreak]
             })
         );
     }
