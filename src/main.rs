@@ -1,5 +1,6 @@
+use anyhow::Result;
 use combine::error::ParseError;
-use combine::parser::char::{newline, space, string};
+use combine::parser::char::{newline, space, spaces, string};
 use combine::*;
 use combine::{count_min_max, token, Parser};
 
@@ -184,12 +185,25 @@ pub enum Inline {
     },
 }
 
-parser! {
-    fn document[Input]()(Input) -> Block
-    where [Input: Stream<Token = char>]
-    {
-        block()
+pub fn parse(s: &str) -> Result<Vec<Block>> {
+    let mut parser = block();
+
+    let mut parsed_blocks: Vec<Block> = vec![];
+
+    let trim_targets: &[_] = &['\n', ' '];
+    let mut rest = s.trim_start_matches(trim_targets);
+
+    loop {
+        dbg!("{:?}", rest);
+        if rest == "" {
+            break;
+        }
+        let (b, s) = parser.parse(rest)?;
+        rest = s;
+        parsed_blocks.push(b);
     }
+
+    return Ok(parsed_blocks);
 }
 
 pub fn block<Input>() -> impl Parser<Input, Output = Block>
@@ -197,7 +211,9 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    heading_block()
+    choice((heading_block(), paragraph_block()))
+        .skip(newline())
+        .skip(spaces())
 }
 
 pub fn inline<Input>() -> impl Parser<Input, Output = Inline>
@@ -233,16 +249,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    return many1::<String, _, _>(satisfy(|c| {
-        let ignore_chars = ['\n', '+'];
-
-        return ignore_chars
-            .iter()
-            .take_while(|ignore_char| **ignore_char == c)
-            .count()
-            == 0;
-    }))
-    .map(|s| Inline::Value(s));
+    return many1::<String, _, _>(satisfy(|c| c != '\n')).map(|s| Inline::Value(s));
 }
 
 pub fn heading_block<Input>() -> impl Parser<Input, Output = Block>
@@ -289,7 +296,11 @@ where
 }
 
 fn main() -> () {
-    dbg!("{:?}", "hello");
+    let asciidoc = "
+    == This is a Heading
+    This is a Paragraph";
+
+    let _result = parse(asciidoc).unwrap();
 }
 
 #[cfg(test)]
@@ -303,9 +314,48 @@ mod tests {
     // --
 
     #[test]
+    fn test_parse_function() {
+        let asciidoc = "
+        == This is a Heading
+
+        This is a Paragraph
+
+        == Foobar
+
+        adfasdf
+
+        ";
+
+        let result = parse(asciidoc).unwrap();
+        assert_eq!(
+            result,
+            vec![
+                Block::Heading {
+                    level: HeadingLevel::Level1,
+                    id: None,
+                    children: vec![Inline::Value("This is a Heading".to_string())]
+                },
+                Block::Paragraph {
+                    children: vec![Inline::Value("This is a Paragraph".to_string())]
+                },
+                Block::Heading {
+                    level: HeadingLevel::Level1,
+                    id: None,
+                    children: vec![Inline::Value("Foobar".to_string())]
+                },
+                Block::Paragraph {
+                    children: vec![Inline::Value("adfasdf".to_string())]
+                }
+            ]
+        )
+    }
+    #[test]
     fn test_inline() {
         let actual = inline().parse("\naadf").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::SoftBreak));
+
+        let actual = inline().parse("aadf").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::Value("aadf".to_string())));
     }
 
     #[test]
@@ -325,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_parse_heading() {
-        let (actual, _) = document().parse("= Heading").unwrap();
+        let (actual, _) = heading_block().parse("= Heading").unwrap();
         assert_eq!(
             actual,
             Block::Heading {
@@ -335,7 +385,7 @@ mod tests {
             }
         );
 
-        let (actual, _) = document().parse("== Heading").unwrap();
+        let (actual, _) = heading_block().parse("== Heading").unwrap();
         assert_eq!(
             actual,
             Block::Heading {
@@ -345,7 +395,7 @@ mod tests {
             }
         );
 
-        let (actual, _) = document().parse("=== Heading").unwrap();
+        let (actual, _) = heading_block().parse("=== Heading").unwrap();
         assert_eq!(
             actual,
             Block::Heading {
@@ -355,7 +405,7 @@ mod tests {
             }
         );
 
-        let (actual, _) = document().parse("==== Heading").unwrap();
+        let (actual, _) = heading_block().parse("==== Heading").unwrap();
         assert_eq!(
             actual,
             Block::Heading {
@@ -365,7 +415,7 @@ mod tests {
             }
         );
 
-        let (actual, _) = document().parse("===== Heading").unwrap();
+        let (actual, _) = heading_block().parse("===== Heading").unwrap();
         assert_eq!(
             actual,
             Block::Heading {
@@ -375,7 +425,7 @@ mod tests {
             }
         );
 
-        let (actual, _) = document().parse("====== Heading").unwrap();
+        let (actual, _) = heading_block().parse("====== Heading").unwrap();
         assert_eq!(
             actual,
             Block::Paragraph {
@@ -406,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn test_paragraph_parser() {
+    fn test_paragraph() {
         let actual = paragraph_block().parse("人間").map(take_parse_result);
         assert_eq!(
             actual,
