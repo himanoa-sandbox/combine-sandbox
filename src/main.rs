@@ -228,7 +228,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((value(), bold() /* italic(),*/ , line_break()))
+    choice((value(), bold(), italic(), line_break()))
 }
 
 pub fn line_break<Input>() -> impl Parser<Input, Output = Inline>
@@ -350,6 +350,8 @@ This is a Paragraph
 == Foobar
 
 This is a *bold* text
+
+This is a _italic_ text
 ";
 
         let result = parse(asciidoc).unwrap();
@@ -377,6 +379,16 @@ This is a *bold* text
                         Inline::Value("This is a ".to_string()),
                         Inline::Bold {
                             children: Box::new(Inline::Value("bold".to_string()))
+                        },
+                        Inline::Value(" text".to_string()),
+                    ]
+                },
+                Block::BlankBlock,
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("This is a ".to_string()),
+                        Inline::Italic {
+                            children: Box::new(Inline::Value("italic".to_string()))
                         },
                         Inline::Value(" text".to_string()),
                         Inline::SoftBreak,
