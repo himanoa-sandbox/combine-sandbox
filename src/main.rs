@@ -1,6 +1,7 @@
 use combine::error::ParseError;
+use combine::parser::char::{letter, newline, space, string};
 use combine::*;
-use combine::{many1, token, Parser};
+use combine::{eof, count_min_max, token, look_ahead, Parser};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeadingLevel {
@@ -109,7 +110,8 @@ pub enum Block {
 pub enum Inline {
     // Paragraph section
     Value(String),
-    Br,
+    HardBreak,
+    SoftBreak,
     Literal {
         children: Box<Inline>,
     },
@@ -203,7 +205,30 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    value()
+    choice((
+        value(),
+        line_break(),
+    ))
+}
+
+pub fn line_break<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    choice(
+        (
+            newline().and(count_min_max::<Vec<char>, _, _>(0, 1, any())).map(|(_, c)|{
+                if let Some(first) = c.first() {
+                    if *first == '\n' {
+                        return Inline::HardBreak;
+                    }
+                }
+                Inline::SoftBreak
+            }),
+            space().and(string("+\n")).map(|_| Inline::HardBreak),
+        )
+    )
 }
 
 pub fn value<Input>() -> impl Parser<Input, Output = Inline>
@@ -211,7 +236,17 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    return many1::<String, _, _>(any()).map(|s| Inline::Value(s));
+    return many1::<String, _, _>(any()).map(|s| Inline::Value(s))
+    // return many1::<String, _, _>(satisfy(|c| {
+    //     let ignore_chars = ['\n', '+'];
+
+    //     return ignore_chars
+    //         .iter()
+    //         .take_while(|ignore_char| **ignore_char == c)
+    //         .count()
+    //         == 0;
+    // }))
+    // .map(|s| Inline::Value(s));
 }
 
 pub fn heading_block<Input>() -> impl Parser<Input, Output = Block>
@@ -252,7 +287,38 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    unimplemented!();
+    fn when_last_line<Input>() -> impl Parser<Input, Output = Block>
+    where
+        Input: Stream<Token = char>,
+        Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+    {
+        inline()
+            .and(eof())
+            .map(|(line_element, _)| Block::Paragraph {
+                children: vec![line_element],
+            })
+    }
+
+    fn when_two_staright_line_breaks<Input>() -> impl Parser<Input, Output = Block>
+    where
+        Input: Stream<Token = char>,
+        Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+    {
+        inline()
+            .skip(newline().silent())
+            .skip(newline().silent())
+            .map(|line_element| Block::Paragraph {
+                children: vec![line_element],
+            })
+    }
+
+    choice((
+        inline().map(|line_element| Block::Paragraph {
+            children: vec![line_element],
+        }),
+        when_two_staright_line_breaks(),
+        when_last_line(),
+    ))
 }
 
 fn main() -> () {
@@ -261,6 +327,9 @@ fn main() -> () {
 
 #[cfg(test)]
 mod tests {
+    use combine::error::ParseError;
+    use combine::parser::char::{letter, newline, space, string};
+    use combine::{eof, many1, token, look_ahead, Parser};
     use super::*;
 
     fn take_parse_result<T, E>(t: (T, E)) -> T {
@@ -334,7 +403,28 @@ mod tests {
     #[test]
     fn test_value() {
         let actual = value().parse("人間").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
+
+        let actual = value().parse("人間\n人間").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::Value("人間".to_string())))
+    }
+
+    #[test]
+    fn test_line_break() {
+        let actual = line_break().parse(" +\n").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::HardBreak));
+
+        let actual = line_break().parse("\n\n").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::HardBreak));
+
+        let actual = line_break().parse("\n").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::SoftBreak));
+    }
+
+    #[test]
+    fn test_inline() {
+        let actual = inline().parse("\naadf").map(take_parse_result);
+        assert_eq!(actual, Ok(Inline::Value("aadf".to_string())));
     }
 
     #[test]
@@ -347,6 +437,16 @@ mod tests {
             })
         );
 
+        let actual = paragraph_block()
+            .parse("cccc\n\nccccc")
+            .map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![Inline::Value("cccc".to_string())]
+            })
+        );
+
         // line break
         let actual = paragraph_block()
             .parse("人間 +\n改行された人間")
@@ -356,7 +456,7 @@ mod tests {
             Ok(Block::Paragraph {
                 children: vec![
                     Inline::Value("人間".to_string()),
-                    Inline::Br,
+                    Inline::HardBreak,
                     Inline::Value("改行された人間".to_string())
                 ]
             })
