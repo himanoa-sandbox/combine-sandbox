@@ -247,6 +247,14 @@ where
         })
 }
 
+pub fn paragraph_block<Input>() -> impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    unimplemented!();
+}
+
 fn main() -> () {
     dbg!("{:?}", "hello");
 }
@@ -254,6 +262,10 @@ fn main() -> () {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn take_parse_result<T, E>(t: (T, E)) -> T {
+        return t.0;
+    }
 
     #[test]
     fn test_parse_heading() {
@@ -321,7 +333,33 @@ mod tests {
 
     #[test]
     fn test_value() {
-        let actual = value().parse("人間").map(|(parsed, _)| parsed);
+        let actual = value().parse("人間").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::Value("人間".to_string())))
+    }
+
+    #[test]
+    fn test_paragraph_parser() {
+        let actual = paragraph_block().parse("人間").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![Inline::Value("人間".to_string())]
+            })
+        );
+
+        // line break
+        let actual = paragraph_block()
+            .parse("人間 +\n改行された人間")
+            .map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::Paragraph {
+                children: vec![
+                    Inline::Value("人間".to_string()),
+                    Inline::Br,
+                    Inline::Value("改行された人間".to_string())
+                ]
+            })
+        )
     }
 }
