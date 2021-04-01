@@ -238,4 +238,10 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_value() {
+        let actual = value().parse("人間").map(|(parsed, _)| parsed);
+        assert_eq!(actual, Ok(Inline::Value("人間".to_string())))
+    }
 }
