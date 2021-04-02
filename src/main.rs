@@ -210,6 +210,7 @@ where
 {
     choice((
         heading_block(),
+        horizontal_ruled_line_block(),
         paragraph_block(),
         blank_block()
     ))
@@ -389,6 +390,8 @@ This is a `monospace` text
 wrap break *
 a
 
+<<<
+
 ";
 
         let result = parse(asciidoc).unwrap();
@@ -449,6 +452,8 @@ a
                         Inline::Value("a".to_string())
                     ]
                 },
+                Block::BlankBlock,
+                Block::HorizontalRuledLine,
                 Block::BlankBlock
             ]
         )
