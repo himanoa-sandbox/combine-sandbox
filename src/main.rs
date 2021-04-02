@@ -211,7 +211,7 @@ where
     choice((
         heading_block(),
         paragraph_block(),
-        count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
+        blank_block()
     ))
 }
 
@@ -323,6 +323,14 @@ where
     // many1::<Vec<Inline>, _, _>(inline()).and(look_ahead(count_min_max::<String, _, _>(1, 2, newline())))
 }
 
+pub fn blank_block<Input>() -> impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
+}
+
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
@@ -352,8 +360,11 @@ This is a Paragraph
 
 This is a *bold* text
 
-This is a _italic_ text *
-adfadsf
+This is a _italic_ text
+
+wrap break *
+a
+
 ";
 
         let result = parse(asciidoc).unwrap();
@@ -393,9 +404,18 @@ adfadsf
                             children: Box::new(Inline::Value("italic".to_string()))
                         },
                         Inline::Value(" text".to_string()),
-                        Inline::SoftBreak,
                     ]
                 },
+                Block::BlankBlock, 
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("wrap break ".to_string()),
+                        Inline::Value("*".to_string()),
+                        Inline::SoftBreak,
+                        Inline::Value("a".to_string())
+                    ]
+                },
+                Block::BlankBlock
             ]
         )
     }
