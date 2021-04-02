@@ -195,7 +195,7 @@ pub fn parse(s: &str) -> Result<Vec<Block>> {
     return Ok(parser.parse(s).map(|(tokens, _)| tokens)?);
 }
 
-pub fn document<Input>() -> impl Parser<Input, Output = Vec<Block>>
+fn document<Input>() -> impl Parser<Input, Output = Vec<Block>>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -203,7 +203,7 @@ where
     many::<Vec<Block>, _, _>(block())
 }
 
-pub fn block<Input>() -> impl Parser<Input, Output = Block>
+fn block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -224,7 +224,7 @@ parser! {
         }
 }
 
-pub fn inline_<Input>() -> impl Parser<Input, Output = Inline>
+fn inline_<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -233,7 +233,7 @@ where
     attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
 
-pub fn line_break<Input>() -> impl Parser<Input, Output = Inline>
+fn line_break<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -283,7 +283,7 @@ where
     })
 }
 
-pub fn value<Input>() -> impl Parser<Input, Output = Inline>
+fn value<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -295,7 +295,7 @@ where
     .map(|s| Inline::Value(s));
 }
 
-pub fn heading_block<Input>() -> impl Parser<Input, Output = Block>
+fn heading_block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -328,7 +328,7 @@ where
         })
 }
 
-pub fn paragraph_block<Input>() -> impl Parser<Input, Output = Block>
+fn paragraph_block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -337,7 +337,7 @@ where
     // many1::<Vec<Inline>, _, _>(inline()).and(look_ahead(count_min_max::<String, _, _>(1, 2, newline())))
 }
 
-pub fn blank_block<Input>() -> impl Parser<Input, Output = Block>
+fn blank_block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -345,7 +345,7 @@ where
     count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
 }
 
-pub fn horizontal_ruled_line_block<Input>()->impl Parser<Input, Output = Block>
+fn horizontal_ruled_line_block<Input>()->impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
