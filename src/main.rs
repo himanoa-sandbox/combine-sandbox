@@ -349,7 +349,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
 {
-    token('<').and(token('<')).and(token('<')).map(|_| Block::HorizontalRuledLine)
+    string("<<<").map(|_| Block::HorizontalRuledLine)
 }
 
 fn main() -> () {
