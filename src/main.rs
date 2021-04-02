@@ -228,7 +228,8 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice((value(), bold(), italic(), line_break()))
+    let inline_combinator = choice((value(), bold(), italic(), line_break()));
+    attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
 
 pub fn line_break<Input>() -> impl Parser<Input, Output = Inline>
@@ -333,7 +334,7 @@ fn main() -> () {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use pretty_assertions::assert_eq;
     // -- utils
     fn take_parse_result<T, E>(t: (T, E)) -> T {
         return t.0;
@@ -351,7 +352,8 @@ This is a Paragraph
 
 This is a *bold* text
 
-This is a _italic_ text
+This is a _italic_ text *
+adfadsf
 ";
 
         let result = parse(asciidoc).unwrap();
