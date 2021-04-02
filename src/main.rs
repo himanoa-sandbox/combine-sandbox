@@ -228,7 +228,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let inline_combinator = choice((value(), bold(), italic(), line_break()));
+    let inline_combinator = choice((value(), bold(), italic(), monospace(), line_break()));
     attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
 
@@ -253,6 +253,19 @@ where
     let symbol = '*';
     skip_many(token(' ')).and(between(token(symbol), token(symbol), inline())).map(|(_, children)| {
         Inline::Bold {
+            children: Box::new(children),
+        }
+    })
+}
+
+fn monospace<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let symbol = '`';
+    skip_many(token(' ')).and(between(token(symbol), token(symbol), inline())).map(|(_, children)| {
+        Inline::Monospace {
             children: Box::new(children),
         }
     })
@@ -529,6 +542,17 @@ a
         assert_eq!(
             actual,
             Ok(Inline::Italic {
+                children: Box::new(Inline::Value("人間".to_string()))
+            })
+        );
+    }
+
+    #[test]
+    fn test_monospace() {
+        let actual = monospace().parse("`人間`").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::Monospace {
                 children: Box::new(Inline::Value("人間".to_string()))
             })
         );
