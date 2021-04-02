@@ -384,6 +384,8 @@ This is a *bold* text
 
 This is a _italic_ text
 
+This is a `monospace` text
+
 wrap break *
 a
 
@@ -424,6 +426,16 @@ a
                         Inline::Value("This is a ".to_string()),
                         Inline::Italic {
                             children: Box::new(Inline::Value("italic".to_string()))
+                        },
+                        Inline::Value(" text".to_string()),
+                    ]
+                },
+                Block::BlankBlock, 
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("This is a ".to_string()),
+                        Inline::Monospace {
+                            children: Box::new(Inline::Value("monospace".to_string()))
                         },
                         Inline::Value(" text".to_string()),
                     ]
