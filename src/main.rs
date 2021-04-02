@@ -258,7 +258,7 @@ where
     })
 }
 
-fn monospace<Input>() -> impl Parser<Input, Output = Inline>
+pub fn monospace<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -287,7 +287,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let ignore_tokens: &_ = &['\n', '*', '_'];
+    let ignore_tokens: &_ = &['\n', '*', '_', '`'];
     return many1::<String, _, _>(satisfy(move |c| {
         &ignore_tokens.iter().skip_while(|i| c != **i).count() == &0
     }))
@@ -344,6 +344,14 @@ where
     count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
 }
 
+pub fn horizontal_ruled_line_block<Input>()->impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+{
+    token('<').and(token('<')).and(token('<')).map(|_| Block::HorizontalRuledLine)
+}
+
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
@@ -355,6 +363,7 @@ fn main() -> () {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use combine::error::StringStreamError;
     use pretty_assertions::assert_eq;
     // -- utils
     fn take_parse_result<T, E>(t: (T, E)) -> T {
@@ -614,5 +623,17 @@ a
                 children: vec![Inline::Value("人間".to_string()), Inline::SoftBreak]
             })
         );
+    }
+
+    #[test]
+    fn test_horizontal_ruled_line_block() {
+        let actual = horizontal_ruled_line_block().parse("<<<").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::HorizontalRuledLine)
+        );
+
+        let actual = horizontal_ruled_line_block().parse("<<").map(take_parse_result);
+        assert_eq!(actual, Err(StringStreamError::Eoi));
     }
 }
