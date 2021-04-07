@@ -1,6 +1,6 @@
 use anyhow::Result;
 use combine::error::ParseError;
-use combine::parser::char::{newline, space, string};
+use combine::parser::char::{newline, space, spaces, string};
 use combine::*;
 
 
@@ -61,7 +61,7 @@ pub enum Block {
     NextPage,
     // List section
     UnorderdList {
-        children: Vec<Inline>,
+        children: Vec<ListItem>,
     },
     UnorderdListItem {
         level: ListLevel,
@@ -185,6 +185,9 @@ pub enum Inline {
         children: Box<Inline>,
     },
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListItem { children: Inline, level: u32 }
 
 pub fn parse(s: &str) -> Result<Vec<Block>> {
     let mut parser = document();
@@ -353,6 +356,24 @@ where
     string("<<<").map(|_| Block::HorizontalRuledLine)
 }
 
+fn unordered_list_block<Input>()-> impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+{
+    many1::<String, _, _>(token('*'))
+        .skip(spaces())
+        .and(many::<Vec<Inline>, _, _>(inline()))
+        .map(|(children)| { Block::UnorderdList { children } })
+}
+
+fn list_item<Input>() -> impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+{
+    skip_many(space()).and()
+}
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
