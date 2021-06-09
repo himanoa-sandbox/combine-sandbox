@@ -384,14 +384,15 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     many1::<Vec<ListItem>, _, _>(
-        list_item()
+        unordered_list_item()
             .and(count_min_max::<Vec<char>, _, _>(0, 1, newline()))
             .map(|(list_item, _)| list_item),
     )
     .map(|items| Block::UnorderdList { children: items })
 }
 
-fn list_item<Input>() -> impl Parser<Input, Output = ListItem>
+
+fn unordered_list_item<Input>() -> impl Parser<Input, Output = ListItem>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -404,6 +405,7 @@ where
             children: inline,
         })
 }
+
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
@@ -740,7 +742,7 @@ a
     }
 
     #[test]
-    fn test_unordered_list_item() {
+    fn test_unordered_list() {
         let blocks = "* abc
 * def";
 
@@ -763,8 +765,8 @@ a
     }
 
     #[test]
-    fn test_list_item() {
-        let actual = list_item()
+    fn test_unordered_list_item() {
+        let actual = unordered_list_item()
             .parse("* foobar *foo* bar _foo_")
             .map(take_parse_result);
         assert_eq!(
@@ -784,7 +786,7 @@ a
             })
         );
 
-        let actual = list_item().parse("* foobar\na").map(take_parse_result);
+        let actual = unordered_list_item().parse("* foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
             Ok(ListItem {
@@ -793,7 +795,7 @@ a
             })
         );
 
-        let actual = list_item().parse("** foobar\na").map(take_parse_result);
+        let actual = unordered_list_item().parse("** foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
             Ok(ListItem {
