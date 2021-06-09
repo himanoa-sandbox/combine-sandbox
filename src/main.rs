@@ -380,10 +380,10 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
 {
 
-    many1(token('*'))
-        .skip(spaces())
+    many1::<String, _, _>(token('*'))
+        .and(spaces())
         .and(many1::<Vec<Inline>, _, _>(attempt(inline())))
-        .map(|(list_tokens, inline)| ListItem { level: list_tokens.len(), children: inline })
+        .map(|((list_tokens, _), inline)| ListItem { level: list_tokens.len() as u32, children: inline })
 }
 fn main() -> () {
     let asciidoc = "
@@ -692,9 +692,9 @@ a
         assert_eq!(
             actual,
             Ok(ListItem { level: 1, children: vec![
-                Inline::Value("foobar".to_string()),
+                Inline::Value("foobar ".to_string()),
                 Inline::Bold{ children: Box::new(Inline::Value("foo".to_string()))},
-                Inline::Value("bar".to_string()),
+                Inline::Value(" bar ".to_string()),
                 Inline::Italic{ children: Box::new(Inline::Value("foo".to_string()))},
             ]})
         );
