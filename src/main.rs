@@ -214,8 +214,9 @@ where
     choice((
         heading_block(),
         horizontal_ruled_line_block(),
+        unordered_list_block(),
         paragraph_block(),
-        blank_block()
+        blank_block(),
     ))
 }
 
@@ -235,6 +236,24 @@ where
     let inline_combinator = choice((value(), bold(), italic(), monospace(), line_break()));
     attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
+
+parser! {
+    fn list_item_inline[Input]()(Input) -> Inline
+    where
+        [Input: Stream<Token = char>] {
+            list_item_inline_()
+        }
+}
+
+fn list_item_inline_<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let inline_combinator = choice((value(), bold(), italic(), monospace()));
+    attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
+}
+
 
 fn line_break<Input>() -> impl Parser<Input, Output = Inline>
 where
@@ -356,22 +375,21 @@ where
     string("<<<").map(|_| Block::HorizontalRuledLine)
 }
 
-fn is_list_token(c: &char) -> bool {
-    static LIST_TOKEN_KINDS: &'static [char] = &['*', '-'];
-    return LIST_TOKEN_KINDS.iter().any(|i| c == i )
-}
-
 fn unordered_list_block<Input>()-> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
 {
-    look_ahead(many1::<String, _, _>(token('*')))
-        .skip(spaces())
-        .and(many::<Vec<ListItem>, _,_>((list_item())))
-        .map(|(_, children)| {
-            Block::UnorderdList { children }
+    many1::<Vec<ListItem>, _, _>(
+        list_item().and(count_min_max::<Vec<char>, _, _>(0, 1, newline())).map(|(list_item, _)| {
+            list_item
         })
+    )
+    .map(|items| {
+        Block::UnorderdList {
+            children: items
+        }
+    })
 }
 
 fn list_item<Input>() -> impl Parser<Input, Output = ListItem>
@@ -382,7 +400,7 @@ where
 
     many1::<String, _, _>(token('*'))
         .and(spaces())
-        .and(many1::<Vec<Inline>, _, _>(attempt(inline())))
+        .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
         .map(|((list_tokens, _), inline)| ListItem { level: list_tokens.len() as u32, children: inline })
 }
 fn main() -> () {
@@ -422,6 +440,12 @@ This is a `monospace` text
 wrap break *
 a
 
+* foo
+* bar
+
+
+* foo
+* bar
 <<<
 
 ";
@@ -485,8 +509,41 @@ a
                     ]
                 },
                 Block::BlankBlock,
+                Block::UnorderdList {
+                    children: vec![
+                        ListItem {
+                            children: vec![
+                                Inline::Value("foo".to_string())
+                            ],
+                            level: 1
+                        },
+                        ListItem {
+                            children: vec![
+                                Inline::Value("bar".to_string())
+                            ],
+                            level: 1
+                        }
+                    ]
+                },
+                Block::BlankBlock,
+                Block::UnorderdList {
+                    children: vec![
+                        ListItem {
+                            children: vec![
+                                Inline::Value("foo".to_string())
+                            ],
+                            level: 1
+                        },
+                        ListItem {
+                            children: vec![
+                                Inline::Value("bar".to_string())
+                            ],
+                            level: 1
+                        }
+                    ]
+                },
                 Block::HorizontalRuledLine,
-                Block::BlankBlock
+                Block::BlankBlock,
             ]
         )
     }
@@ -687,6 +744,25 @@ a
     }
 
     #[test]
+    fn test_unordered_list_item() {
+        let blocks = 
+"* abc
+* def";
+
+        let actual = unordered_list_block().parse(blocks).map(take_parse_result);
+        assert_eq!(actual, Ok(Block::UnorderdList {
+            children: vec![
+                ListItem { level: 1, children: vec![
+                    Inline::Value("abc".to_string())
+                ] },
+                ListItem { level: 1, children: vec![
+                    Inline::Value("def".to_string())
+                ] }
+            ]
+        }))
+    }
+
+    #[test]
     fn test_list_item() {
         let actual = list_item().parse("* foobar *foo* bar _foo_").map(take_parse_result);
         assert_eq!(
@@ -698,14 +774,21 @@ a
                 Inline::Italic{ children: Box::new(Inline::Value("foo".to_string()))},
             ]})
         );
-    }
 
-    #[test]
-    fn test_is_list_token() {
-        assert_eq!(is_list_token(&'*'), true);
-        assert_eq!(is_list_token(&'-'), true);
-        assert_eq!(is_list_token(&'_'), false);
-        assert_eq!(is_list_token(&'a'), false);
-    }
+        let actual = list_item().parse("* foobar\na").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem { level: 1, children: vec![
+                Inline::Value("foobar".to_string()),
+            ]})
+        );
 
+        let actual = list_item().parse("** foobar\na").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem { level: 2, children: vec![
+                Inline::Value("foobar".to_string()),
+            ]})
+        );
+    }
 }
