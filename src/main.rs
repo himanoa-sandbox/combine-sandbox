@@ -3,7 +3,6 @@ use combine::error::ParseError;
 use combine::parser::char::{newline, space, spaces, string};
 use combine::*;
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum HeadingLevel {
     Title,
@@ -105,7 +104,7 @@ pub enum Block {
         rows: Vec<TableRow>,
         title: Option<String>,
     },
-    BlankBlock
+    BlankBlock,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -187,13 +186,16 @@ pub enum Inline {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ListItem { children: Vec<Inline>, level: u32 }
+pub struct ListItem {
+    children: Vec<Inline>,
+    level: u32,
+}
 
 pub fn parse(s: &str) -> Result<Vec<Block>> {
     let mut parser = document();
 
     let trim_targets: &[_] = &['\n', ' '];
-    let s  = s.trim_start_matches(trim_targets);
+    let s = s.trim_start_matches(trim_targets);
 
     return Ok(parser.parse(s).map(|(tokens, _)| tokens)?);
 }
@@ -234,7 +236,8 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let inline_combinator = choice((value(), bold(), italic(), monospace(), line_break()));
-    attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
+    attempt(inline_combinator)
+        .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
 
 parser! {
@@ -251,21 +254,21 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let inline_combinator = choice((value(), bold(), italic(), monospace()));
-    attempt(inline_combinator).or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
+    attempt(inline_combinator)
+        .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
-
 
 fn line_break<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    choice(
-        (
-            newline().and(not_followed_by(newline())).map(|_| Inline::SoftBreak),
-            space().and(string("+\n")).map(|_| Inline::HardBreak)
-        )
-    )
+    choice((
+        newline()
+            .and(not_followed_by(newline()))
+            .map(|_| Inline::SoftBreak),
+        space().and(string("+\n")).map(|_| Inline::HardBreak),
+    ))
 }
 
 fn bold<Input>() -> impl Parser<Input, Output = Inline>
@@ -274,11 +277,11 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let symbol = '*';
-    skip_many(token(' ')).and(between(token(symbol), token(symbol), inline())).map(|(_, children)| {
-        Inline::Bold {
+    skip_many(token(' '))
+        .and(between(token(symbol), token(symbol), inline()))
+        .map(|(_, children)| Inline::Bold {
             children: Box::new(children),
-        }
-    })
+        })
 }
 
 pub fn monospace<Input>() -> impl Parser<Input, Output = Inline>
@@ -287,11 +290,11 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let symbol = '`';
-    skip_many(token(' ')).and(between(token(symbol), token(symbol), inline())).map(|(_, children)| {
-        Inline::Monospace {
+    skip_many(token(' '))
+        .and(between(token(symbol), token(symbol), inline()))
+        .map(|(_, children)| Inline::Monospace {
             children: Box::new(children),
-        }
-    })
+        })
 }
 
 fn italic<Input>() -> impl Parser<Input, Output = Inline>
@@ -367,41 +370,39 @@ where
     count_min_max::<String, _, _>(2, 2, newline()).map(|_| Block::BlankBlock)
 }
 
-fn horizontal_ruled_line_block<Input>()->impl Parser<Input, Output = Block>
+fn horizontal_ruled_line_block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     string("<<<").map(|_| Block::HorizontalRuledLine)
 }
 
-fn unordered_list_block<Input>()-> impl Parser<Input, Output = Block>
+fn unordered_list_block<Input>() -> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     many1::<Vec<ListItem>, _, _>(
-        list_item().and(count_min_max::<Vec<char>, _, _>(0, 1, newline())).map(|(list_item, _)| {
-            list_item
-        })
+        list_item()
+            .and(count_min_max::<Vec<char>, _, _>(0, 1, newline()))
+            .map(|(list_item, _)| list_item),
     )
-    .map(|items| {
-        Block::UnorderdList {
-            children: items
-        }
-    })
+    .map(|items| Block::UnorderdList { children: items })
 }
 
 fn list_item<Input>() -> impl Parser<Input, Output = ListItem>
 where
     Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-
     many1::<String, _, _>(token('*'))
         .and(spaces())
         .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
-        .map(|((list_tokens, _), inline)| ListItem { level: list_tokens.len() as u32, children: inline })
+        .map(|((list_tokens, _), inline)| ListItem {
+            level: list_tokens.len() as u32,
+            children: inline,
+        })
 }
 fn main() -> () {
     let asciidoc = "
@@ -489,7 +490,7 @@ a
                         Inline::Value(" text".to_string()),
                     ]
                 },
-                Block::BlankBlock, 
+                Block::BlankBlock,
                 Block::Paragraph {
                     children: vec![
                         Inline::Value("This is a ".to_string()),
@@ -499,7 +500,7 @@ a
                         Inline::Value(" text".to_string()),
                     ]
                 },
-                Block::BlankBlock, 
+                Block::BlankBlock,
                 Block::Paragraph {
                     children: vec![
                         Inline::Value("wrap break ".to_string()),
@@ -512,15 +513,11 @@ a
                 Block::UnorderdList {
                     children: vec![
                         ListItem {
-                            children: vec![
-                                Inline::Value("foo".to_string())
-                            ],
+                            children: vec![Inline::Value("foo".to_string())],
                             level: 1
                         },
                         ListItem {
-                            children: vec![
-                                Inline::Value("bar".to_string())
-                            ],
+                            children: vec![Inline::Value("bar".to_string())],
                             level: 1
                         }
                     ]
@@ -529,15 +526,11 @@ a
                 Block::UnorderdList {
                     children: vec![
                         ListItem {
-                            children: vec![
-                                Inline::Value("foo".to_string())
-                            ],
+                            children: vec![Inline::Value("foo".to_string())],
                             level: 1
                         },
                         ListItem {
-                            children: vec![
-                                Inline::Value("bar".to_string())
-                            ],
+                            children: vec![Inline::Value("bar".to_string())],
                             level: 1
                         }
                     ]
@@ -693,13 +686,17 @@ a
 
     #[test]
     fn test_paragraph() {
-        let actual = paragraph_block().parse("人間 *a* 人間").map(take_parse_result);
+        let actual = paragraph_block()
+            .parse("人間 *a* 人間")
+            .map(take_parse_result);
         assert_eq!(
             actual,
             Ok(Block::Paragraph {
                 children: vec![
                     Inline::Value("人間 ".to_string()),
-                    Inline::Bold{children: Box::new(Inline::Value("a".to_string()))},
+                    Inline::Bold {
+                        children: Box::new(Inline::Value("a".to_string()))
+                    },
                     Inline::Value(" 人間".to_string())
                 ]
             })
@@ -709,9 +706,7 @@ a
         assert_eq!(
             actual,
             Ok(Block::Paragraph {
-                children: vec![
-                    Inline::Value("人間 ".to_string()),
-                ]
+                children: vec![Inline::Value("人間 ".to_string()),]
             })
         );
         let actual = paragraph_block().parse("人間").map(take_parse_result);
@@ -733,62 +728,78 @@ a
 
     #[test]
     fn test_horizontal_ruled_line_block() {
-        let actual = horizontal_ruled_line_block().parse("<<<").map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(Block::HorizontalRuledLine)
-        );
+        let actual = horizontal_ruled_line_block()
+            .parse("<<<")
+            .map(take_parse_result);
+        assert_eq!(actual, Ok(Block::HorizontalRuledLine));
 
-        let actual = horizontal_ruled_line_block().parse("<<").map(take_parse_result);
+        let actual = horizontal_ruled_line_block()
+            .parse("<<")
+            .map(take_parse_result);
         assert_eq!(actual, Err(StringStreamError::Eoi));
     }
 
     #[test]
     fn test_unordered_list_item() {
-        let blocks = 
-"* abc
+        let blocks = "* abc
 * def";
 
         let actual = unordered_list_block().parse(blocks).map(take_parse_result);
-        assert_eq!(actual, Ok(Block::UnorderdList {
-            children: vec![
-                ListItem { level: 1, children: vec![
-                    Inline::Value("abc".to_string())
-                ] },
-                ListItem { level: 1, children: vec![
-                    Inline::Value("def".to_string())
-                ] }
-            ]
-        }))
+        assert_eq!(
+            actual,
+            Ok(Block::UnorderdList {
+                children: vec![
+                    ListItem {
+                        level: 1,
+                        children: vec![Inline::Value("abc".to_string())]
+                    },
+                    ListItem {
+                        level: 1,
+                        children: vec![Inline::Value("def".to_string())]
+                    }
+                ]
+            })
+        )
     }
 
     #[test]
     fn test_list_item() {
-        let actual = list_item().parse("* foobar *foo* bar _foo_").map(take_parse_result);
+        let actual = list_item()
+            .parse("* foobar *foo* bar _foo_")
+            .map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem { level: 1, children: vec![
-                Inline::Value("foobar ".to_string()),
-                Inline::Bold{ children: Box::new(Inline::Value("foo".to_string()))},
-                Inline::Value(" bar ".to_string()),
-                Inline::Italic{ children: Box::new(Inline::Value("foo".to_string()))},
-            ]})
+            Ok(ListItem {
+                level: 1,
+                children: vec![
+                    Inline::Value("foobar ".to_string()),
+                    Inline::Bold {
+                        children: Box::new(Inline::Value("foo".to_string()))
+                    },
+                    Inline::Value(" bar ".to_string()),
+                    Inline::Italic {
+                        children: Box::new(Inline::Value("foo".to_string()))
+                    },
+                ]
+            })
         );
 
         let actual = list_item().parse("* foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem { level: 1, children: vec![
-                Inline::Value("foobar".to_string()),
-            ]})
+            Ok(ListItem {
+                level: 1,
+                children: vec![Inline::Value("foobar".to_string()),]
+            })
         );
 
         let actual = list_item().parse("** foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem { level: 2, children: vec![
-                Inline::Value("foobar".to_string()),
-            ]})
+            Ok(ListItem {
+                level: 2,
+                children: vec![Inline::Value("foobar".to_string()),]
+            })
         );
     }
 }
