@@ -187,7 +187,7 @@ pub enum Inline {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ListItem { children: Inline, level: u32 }
+pub struct ListItem { children: Vec<Inline>, level: u32 }
 
 pub fn parse(s: &str) -> Result<Vec<Block>> {
     let mut parser = document();
@@ -356,23 +356,34 @@ where
     string("<<<").map(|_| Block::HorizontalRuledLine)
 }
 
+fn is_list_token(c: &char) -> bool {
+    static LIST_TOKEN_KINDS: &'static [char] = &['*', '-'];
+    return LIST_TOKEN_KINDS.iter().any(|i| c == i )
+}
+
 fn unordered_list_block<Input>()-> impl Parser<Input, Output = Block>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
 {
-    many1::<String, _, _>(token('*'))
+    look_ahead(many1::<String, _, _>(token('*')))
         .skip(spaces())
-        .and(many::<Vec<Inline>, _, _>(inline()))
-        .map(|(children)| { Block::UnorderdList { children } })
+        .and(many::<Vec<ListItem>, _,_>((list_item())))
+        .map(|(_, children)| {
+            Block::UnorderdList { children }
+        })
 }
 
-fn list_item<Input>() -> impl Parser<Input, Output = Block>
+fn list_item<Input>() -> impl Parser<Input, Output = ListItem>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>
 {
-    skip_many(space()).and()
+
+    many1(token('*'))
+        .skip(spaces())
+        .and(many1::<Vec<Inline>, _, _>(attempt(inline())))
+        .map(|(list_tokens, inline)| ListItem { level: list_tokens.len(), children: inline })
 }
 fn main() -> () {
     let asciidoc = "
@@ -674,4 +685,27 @@ a
         let actual = horizontal_ruled_line_block().parse("<<").map(take_parse_result);
         assert_eq!(actual, Err(StringStreamError::Eoi));
     }
+
+    #[test]
+    fn test_list_item() {
+        let actual = list_item().parse("* foobar *foo* bar _foo_").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem { level: 1, children: vec![
+                Inline::Value("foobar".to_string()),
+                Inline::Bold{ children: Box::new(Inline::Value("foo".to_string()))},
+                Inline::Value("bar".to_string()),
+                Inline::Italic{ children: Box::new(Inline::Value("foo".to_string()))},
+            ]})
+        );
+    }
+
+    #[test]
+    fn test_is_list_token() {
+        assert_eq!(is_list_token(&'*'), true);
+        assert_eq!(is_list_token(&'-'), true);
+        assert_eq!(is_list_token(&'_'), false);
+        assert_eq!(is_list_token(&'a'), false);
+    }
+
 }
