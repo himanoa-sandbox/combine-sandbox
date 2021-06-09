@@ -62,10 +62,6 @@ pub enum Block {
     UnorderdList {
         children: Vec<ListItem>,
     },
-    UnorderdListItem {
-        level: ListLevel,
-        children: Vec<Inline>,
-    },
     CheckList {
         children: Vec<Inline>,
     },
@@ -75,11 +71,7 @@ pub enum Block {
         checked: bool,
     },
     OrderdList {
-        children: Vec<Inline>,
-    },
-    OrderdListItem {
-        level: ListLevel,
-        children: Vec<Inline>,
+        children: Vec<ListItem>,
     },
     Label {
         children: Vec<Inline>,
@@ -216,6 +208,7 @@ where
     choice((
         heading_block(),
         horizontal_ruled_line_block(),
+        ordered_list_block(),
         unordered_list_block(),
         paragraph_block(),
         blank_block(),
@@ -406,6 +399,34 @@ where
         })
 }
 
+fn ordered_list_block<Input>() -> impl Parser<Input, Output = Block>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many1::<Vec<ListItem>, _, _>(
+        ordered_list_item()
+            .and(count_min_max::<Vec<char>, _, _>(0, 1, newline()))
+            .map(|(list_item, _)| list_item),
+    )
+    .map(|items| Block::OrderdList { children: items })
+}
+
+
+fn ordered_list_item<Input>() -> impl Parser<Input, Output = ListItem>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many1::<String, _, _>(token('.'))
+        .and(spaces())
+        .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
+        .map(|((list_tokens, _), inline)| ListItem {
+            level: list_tokens.len() as u32,
+            children: inline,
+        })
+}
+
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
@@ -447,8 +468,8 @@ a
 * bar
 
 
-* foo
-* bar
+. foo
+. bar
 <<<
 
 ";
@@ -525,7 +546,7 @@ a
                     ]
                 },
                 Block::BlankBlock,
-                Block::UnorderdList {
+                Block::OrderdList {
                     children: vec![
                         ListItem {
                             children: vec![Inline::Value("foo".to_string())],
@@ -804,4 +825,69 @@ a
             })
         );
     }
+    #[test]
+    fn test_ordered_list() {
+        let blocks = ". abc
+. def";
+
+        let actual = ordered_list_block().parse(blocks).map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Block::OrderdList {
+                children: vec![
+                    ListItem {
+                        level: 1,
+                        children: vec![Inline::Value("abc".to_string())]
+                    },
+                    ListItem {
+                        level: 1,
+                        children: vec![Inline::Value("def".to_string())]
+                    }
+                ]
+            })
+        )
+    }
+
+    #[test]
+    fn test_ordered_list_item() {
+        let actual = ordered_list_item()
+            .parse(". foobar *foo* bar _foo_")
+            .map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem {
+                level: 1,
+                children: vec![
+                    Inline::Value("foobar ".to_string()),
+                    Inline::Bold {
+                        children: Box::new(Inline::Value("foo".to_string()))
+                    },
+                    Inline::Value(" bar ".to_string()),
+                    Inline::Italic {
+                        children: Box::new(Inline::Value("foo".to_string()))
+                    },
+                ]
+            })
+        );
+
+        let actual = ordered_list_item().parse(". foobar\na").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem {
+                level: 1,
+                children: vec![Inline::Value("foobar".to_string()),]
+            })
+        );
+
+        let actual = ordered_list_item().parse(".. foobar\na").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(ListItem {
+                level: 2,
+                children: vec![Inline::Value("foobar".to_string()),]
+            })
+        );
+    }
+
 }
+
