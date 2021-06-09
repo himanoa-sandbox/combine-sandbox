@@ -62,14 +62,6 @@ pub enum Block {
     UnorderdList {
         children: Vec<ListItem>,
     },
-    CheckList {
-        children: Vec<Inline>,
-    },
-    CheclListItem {
-        level: ListLevel,
-        children: Vec<Inline>,
-        checked: bool,
-    },
     OrderdList {
         children: Vec<ListItem>,
     },
@@ -178,8 +170,22 @@ pub enum Inline {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ListItem {
+pub enum ListItem {
+    Normal {
+        children: Vec<Inline>,
+        level: u32,
+    },
+    Check {
+        children: Vec<Inline>,
+        level: u32,
+        checked: bool
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CheckListItem {
     children: Vec<Inline>,
+    checked: bool,
     level: u32,
 }
 
@@ -377,26 +383,11 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     many1::<Vec<ListItem>, _, _>(
-        unordered_list_item()
+        list_item('*')
             .and(count_min_max::<Vec<char>, _, _>(0, 1, newline()))
             .map(|(list_item, _)| list_item),
     )
     .map(|items| Block::UnorderdList { children: items })
-}
-
-
-fn unordered_list_item<Input>() -> impl Parser<Input, Output = ListItem>
-where
-    Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    many1::<String, _, _>(token('*'))
-        .and(spaces())
-        .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
-        .map(|((list_tokens, _), inline)| ListItem {
-            level: list_tokens.len() as u32,
-            children: inline,
-        })
 }
 
 fn ordered_list_block<Input>() -> impl Parser<Input, Output = Block>
@@ -405,25 +396,52 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     many1::<Vec<ListItem>, _, _>(
-        ordered_list_item()
+        list_item('.')
             .and(count_min_max::<Vec<char>, _, _>(0, 1, newline()))
             .map(|(list_item, _)| list_item),
     )
     .map(|items| Block::OrderdList { children: items })
 }
 
-
-fn ordered_list_item<Input>() -> impl Parser<Input, Output = ListItem>
+fn list_item<Input>(list_char: char) -> impl Parser<Input, Output = ListItem>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    many1::<String, _, _>(token('.'))
+    choice!(
+        attempt(checked_list_item(list_char)),
+        normal_list_item(list_char)
+    )
+}
+
+fn normal_list_item<Input>(list_char: char) -> impl Parser<Input, Output = ListItem>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many1::<String, _, _>(token(list_char))
         .and(spaces())
         .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
-        .map(|((list_tokens, _), inline)| ListItem {
+        .map(|((list_tokens, _), inline)| ListItem::Normal {
             level: list_tokens.len() as u32,
             children: inline,
+        })
+}
+
+fn checked_list_item<Input>(list_char: char) -> impl Parser<Input, Output = ListItem>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    many1::<String, _, _>(token(list_char))
+        .and(spaces())
+        .and(between(token('['), token(']'), satisfy(|c| c == '*' || c == 'x' || c == ' ')))
+        .and(spaces())
+        .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
+        .map(|((((list_tokens, _), check_box_char), _), inline)| ListItem::Check {
+            level: list_tokens.len() as u32,
+            children: inline,
+            checked: check_box_char != ' '
         })
 }
 
@@ -535,11 +553,11 @@ a
                 Block::BlankBlock,
                 Block::UnorderdList {
                     children: vec![
-                        ListItem {
+                        ListItem::Normal {
                             children: vec![Inline::Value("foo".to_string())],
                             level: 1
                         },
-                        ListItem {
+                        ListItem::Normal {
                             children: vec![Inline::Value("bar".to_string())],
                             level: 1
                         }
@@ -548,11 +566,11 @@ a
                 Block::BlankBlock,
                 Block::OrderdList {
                     children: vec![
-                        ListItem {
+                        ListItem::Normal {
                             children: vec![Inline::Value("foo".to_string())],
                             level: 1
                         },
-                        ListItem {
+                        ListItem::Normal {
                             children: vec![Inline::Value("bar".to_string())],
                             level: 1
                         }
@@ -772,59 +790,36 @@ a
             actual,
             Ok(Block::UnorderdList {
                 children: vec![
-                    ListItem {
+                    ListItem::Normal {
                         level: 1,
                         children: vec![Inline::Value("abc".to_string())]
                     },
-                    ListItem {
+                    ListItem::Normal {
                         level: 1,
                         children: vec![Inline::Value("def".to_string())]
                     }
                 ]
             })
-        )
-    }
+        );
 
-    #[test]
-    fn test_unordered_list_item() {
-        let actual = unordered_list_item()
-            .parse("* foobar *foo* bar _foo_")
-            .map(take_parse_result);
+        let blocks = "* [x] abc";
+
+        let actual = unordered_list_block().parse(blocks).map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem {
-                level: 1,
+            Ok(Block::UnorderdList {
                 children: vec![
-                    Inline::Value("foobar ".to_string()),
-                    Inline::Bold {
-                        children: Box::new(Inline::Value("foo".to_string()))
-                    },
-                    Inline::Value(" bar ".to_string()),
-                    Inline::Italic {
-                        children: Box::new(Inline::Value("foo".to_string()))
+                    ListItem::Check {
+                        level: 1,
+                        children: vec![Inline::Value("abc".to_string())],
+                        checked: true
                     },
                 ]
             })
         );
-
-        let actual = unordered_list_item().parse("* foobar\na").map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(ListItem {
-                level: 1,
-                children: vec![Inline::Value("foobar".to_string()),]
-            })
-        );
-
-        let actual = unordered_list_item().parse("** foobar\na").map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(ListItem {
-                level: 2,
-                children: vec![Inline::Value("foobar".to_string()),]
-            })
-        );
     }
+
+    #[test]
     #[test]
     fn test_ordered_list() {
         let blocks = ". abc
@@ -835,11 +830,11 @@ a
             actual,
             Ok(Block::OrderdList {
                 children: vec![
-                    ListItem {
+                    ListItem::Normal {
                         level: 1,
                         children: vec![Inline::Value("abc".to_string())]
                     },
-                    ListItem {
+                    ListItem::Normal {
                         level: 1,
                         children: vec![Inline::Value("def".to_string())]
                     }
@@ -850,12 +845,12 @@ a
 
     #[test]
     fn test_ordered_list_item() {
-        let actual = ordered_list_item()
+        let actual = list_item('.')
             .parse(". foobar *foo* bar _foo_")
             .map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem {
+            Ok(ListItem::Normal {
                 level: 1,
                 children: vec![
                     Inline::Value("foobar ".to_string()),
@@ -870,19 +865,19 @@ a
             })
         );
 
-        let actual = ordered_list_item().parse(". foobar\na").map(take_parse_result);
+        let actual = list_item('.').parse(". foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem {
+            Ok(ListItem::Normal {
                 level: 1,
                 children: vec![Inline::Value("foobar".to_string()),]
             })
         );
 
-        let actual = ordered_list_item().parse(".. foobar\na").map(take_parse_result);
+        let actual = list_item('.').parse(".. foobar\na").map(take_parse_result);
         assert_eq!(
             actual,
-            Ok(ListItem {
+            Ok(ListItem::Normal {
                 level: 2,
                 children: vec![Inline::Value("foobar".to_string()),]
             })
