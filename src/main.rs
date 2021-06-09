@@ -182,13 +182,6 @@ pub enum ListItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct CheckListItem {
-    children: Vec<Inline>,
-    checked: bool,
-    level: u32,
-}
-
 pub fn parse(s: &str) -> Result<Vec<Block>> {
     let mut parser = document();
 
