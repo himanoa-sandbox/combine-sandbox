@@ -120,15 +120,6 @@ pub enum Inline {
     Marker {
         children: Box<Inline>,
     },
-    Underline {
-        children: Box<Inline>,
-    },
-    LineThrough {
-        children: Box<Inline>,
-    },
-    Big {
-        children: Box<Inline>,
-    },
     // Unsupport Superscript
     // Unsupport Subscript
     // Unsupport Curvequote
@@ -227,7 +218,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let inline_combinator = choice((value(), bold(), italic(), monospace(), marker(), line_break()));
+    let inline_combinator = choice((value(), bold(), italic(), attempt(inline_code()).or(monospace()), marker(), line_break()));
     attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
@@ -313,6 +304,17 @@ where
         .map(|(_, children)| Inline::Marker {
             children: Box::new(children),
         })
+}
+
+fn inline_code<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let symbol = '`';
+    (token(symbol), token(symbol), token(symbol), inline(), token(symbol), token(symbol), token(symbol)).map(|(_, _, _, children, _, _, _)| Inline::InlineCode {
+        children: Box::new(children)
+    })
 }
 
 fn value<Input>() -> impl Parser<Input, Output = Inline>
@@ -464,7 +466,7 @@ fn main() -> () {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use combine::error::StringStreamError;
+    use combine::{error::StringStreamError, parser::error::Unexpected};
     use pretty_assertions::assert_eq;
     // -- utils
     fn take_parse_result<T, E>(t: (T, E)) -> T {
@@ -488,6 +490,8 @@ This is a _italic_ text
 This is a `monospace` text
 
 This is a #marker# text
+
+This is a ```inline code``` text
 
 wrap break *
 a
@@ -557,6 +561,16 @@ a
                         Inline::Value("This is a ".to_string()),
                         Inline::Marker {
                             children: Box::new(Inline::Value("marker".to_string()))
+                        },
+                        Inline::Value(" text".to_string()),
+                    ]
+                },
+                Block::BlankBlock,
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("This is a ".to_string()),
+                        Inline::InlineCode {
+                            children: Box::new(Inline::Value("inline code".to_string()))
                         },
                         Inline::Value(" text".to_string()),
                     ]
@@ -716,6 +730,23 @@ a
             Ok(Inline::Marker {
                 children: Box::new(Inline::Value("人間".to_string()))
             })
+        );
+    }
+
+    #[test]
+    fn test_inline_code() {
+        let actual = inline_code().parse(r"```npm```").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::InlineCode {
+                children: Box::new(Inline::Value("npm".to_string()))
+            })
+        );
+
+        let actual = inline_code().parse(r"`npm`").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Err(combine::error::StringStreamError::UnexpectedParse)
         );
     }
 
