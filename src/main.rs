@@ -169,8 +169,8 @@ pub enum ListItem {
     Check {
         children: Vec<Inline>,
         level: u32,
-        checked: bool
-    }
+        checked: bool,
+    },
 }
 
 pub fn parse(s: &str) -> Result<Vec<Block>> {
@@ -218,7 +218,14 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let inline_combinator = choice((value(), bold(), italic(), attempt(inline_code()).or(monospace()), marker(), line_break()));
+    let inline_combinator = choice((
+        value(),
+        bold(),
+        italic(),
+        attempt(inline_code()).or(monospace()),
+        marker(),
+        line_break(),
+    ));
     attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
@@ -289,8 +296,8 @@ where
     skip_many(token(' '))
         .and(between(token(symbol), token(symbol), inline()))
         .map(|(_, children)| Inline::Italic {
-        children: Box::new(children),
-    })
+            children: Box::new(children),
+        })
 }
 
 fn marker<Input>() -> impl Parser<Input, Output = Inline>
@@ -312,9 +319,18 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let symbol = '`';
-    (token(symbol), token(symbol), token(symbol), inline(), token(symbol), token(symbol), token(symbol)).map(|(_, _, _, children, _, _, _)| Inline::InlineCode {
-        children: Box::new(children)
-    })
+    (
+        token(symbol),
+        token(symbol),
+        token(symbol),
+        inline(),
+        token(symbol),
+        token(symbol),
+        token(symbol),
+    )
+        .map(|(_, _, _, children, _, _, _)| Inline::InlineCode {
+            children: Box::new(children),
+        })
 }
 
 fn value<Input>() -> impl Parser<Input, Output = Inline>
@@ -445,14 +461,20 @@ where
 {
     many1::<String, _, _>(token(list_char))
         .and(spaces())
-        .and(between(token('['), token(']'), satisfy(|c| c == '*' || c == 'x' || c == ' ')))
+        .and(between(
+            token('['),
+            token(']'),
+            satisfy(|c| c == '*' || c == 'x' || c == ' '),
+        ))
         .and(spaces())
         .and(many1::<Vec<Inline>, _, _>(attempt(list_item_inline_())))
-        .map(|((((list_tokens, _), check_box_char), _), inline)| ListItem::Check {
-            level: list_tokens.len() as u32,
-            children: inline,
-            checked: check_box_char != ' '
-        })
+        .map(
+            |((((list_tokens, _), check_box_char), _), inline)| ListItem::Check {
+                level: list_tokens.len() as u32,
+                children: inline,
+                checked: check_box_char != ' ',
+            },
+        )
 }
 
 fn main() -> () {
@@ -862,13 +884,11 @@ a
         assert_eq!(
             actual,
             Ok(Block::UnorderdList {
-                children: vec![
-                    ListItem::Check {
-                        level: 1,
-                        children: vec![Inline::Value("abc".to_string())],
-                        checked: true
-                    },
-                ]
+                children: vec![ListItem::Check {
+                    level: 1,
+                    children: vec![Inline::Value("abc".to_string())],
+                    checked: true
+                },]
             })
         );
     }
@@ -936,6 +956,4 @@ a
             })
         );
     }
-
 }
-
