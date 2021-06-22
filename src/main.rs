@@ -227,7 +227,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let inline_combinator = choice((value(), bold(), italic(), monospace(), line_break()));
+    let inline_combinator = choice((value(), bold(), italic(), monospace(), marker(), line_break()));
     attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
@@ -295,9 +295,24 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let symbol = '_';
-    between(token(symbol), token(symbol), inline()).map(|children| Inline::Italic {
+    skip_many(token(' '))
+        .and(between(token(symbol), token(symbol), inline()))
+        .map(|(_, children)| Inline::Italic {
         children: Box::new(children),
     })
+}
+
+fn marker<Input>() -> impl Parser<Input, Output = Inline>
+where
+    Input: Stream<Token = char>,
+    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
+{
+    let symbol = '#';
+    skip_many(token(' '))
+        .and(between(token(symbol), token(symbol), inline()))
+        .map(|(_, children)| Inline::Marker {
+            children: Box::new(children),
+        })
 }
 
 fn value<Input>() -> impl Parser<Input, Output = Inline>
@@ -305,7 +320,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let ignore_tokens: &_ = &['\n', '*', '_', '`'];
+    let ignore_tokens: &_ = &['\n', '*', '_', '`', '#'];
     return many1::<String, _, _>(satisfy(move |c| {
         &ignore_tokens.iter().skip_while(|i| c != **i).count() == &0
     }))
@@ -472,6 +487,8 @@ This is a _italic_ text
 
 This is a `monospace` text
 
+This is a #marker# text
+
 wrap break *
 a
 
@@ -530,6 +547,16 @@ a
                         Inline::Value("This is a ".to_string()),
                         Inline::Monospace {
                             children: Box::new(Inline::Value("monospace".to_string()))
+                        },
+                        Inline::Value(" text".to_string()),
+                    ]
+                },
+                Block::BlankBlock,
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("This is a ".to_string()),
+                        Inline::Marker {
+                            children: Box::new(Inline::Value("marker".to_string()))
                         },
                         Inline::Value(" text".to_string()),
                     ]
@@ -668,14 +695,6 @@ a
                 children: Box::new(Inline::Value("人間".to_string()))
             })
         );
-
-        let actual = bold().parse("*人間*").map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(Inline::Bold {
-                children: Box::new(Inline::Value("人間".to_string()))
-            })
-        );
     }
 
     #[test]
@@ -684,6 +703,17 @@ a
         assert_eq!(
             actual,
             Ok(Inline::Italic {
+                children: Box::new(Inline::Value("人間".to_string()))
+            })
+        );
+    }
+
+    #[test]
+    fn test_marker() {
+        let actual = marker().parse("#人間#").map(take_parse_result);
+        assert_eq!(
+            actual,
+            Ok(Inline::Marker {
                 children: Box::new(Inline::Value("人間".to_string()))
             })
         );
@@ -812,7 +842,6 @@ a
         );
     }
 
-    #[test]
     #[test]
     fn test_ordered_list() {
         let blocks = ". abc
