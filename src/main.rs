@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use combine::error::ParseError;
 use combine::parser::char::{newline, space, spaces, string};
 use combine::*;
@@ -124,40 +125,21 @@ pub enum Inline {
     // Unsupport Subscript
     // Unsupport Curvequote
     // Unsupport Apostorofy
-
-    // Label section
-    // Link section
-    Link {
-        href: String,
-        children: Box<Inline>,
-    },
-    Mail {
-        to: String,
-        children: Box<Inline>,
-    },
-    // Unsupport LinkWithAttribute
-    // Unsupport InlineAnchor
-    // Unsupport InnerCrossReference
-    // Unsupport DocumentCrossReference
-
-    // Image section
-    Image {
-        src: String,
-        caption: Option<String>,
-    },
-    InlineImage {
-        src: String,
-        caption: Option<String>,
-    },
-    // Video section
-    Video {
-        id: String,
-        provider: VideoProvider,
+    Macro {
+        attributes: Attribute,
+        kind: String,
+        id: String
     },
     // Code section
     InlineCode {
         children: Box<Inline>,
     },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Attribute {
+    Position(Vec<String>),
+    Named(HashMap<String, String>)
 }
 
 #[derive(Debug, PartialEq, Eq)]
