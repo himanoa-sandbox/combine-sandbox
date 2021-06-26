@@ -1,6 +1,5 @@
 use anyhow::Result;
 use combine::error::ParseError;
-use combine::parser::byte::alpha_num;
 use combine::parser::char::{newline, space, spaces, string};
 use combine::*;
 use std::collections::HashMap;
@@ -127,7 +126,7 @@ pub enum Inline {
     // Unsupport Curvequote
     // Unsupport Apostorofy
     Macro {
-        attributes: Attribute,
+        attributes: Attributes,
         kind: String,
         id: String,
     },
@@ -138,7 +137,7 @@ pub enum Inline {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Attribute {
+pub enum Attributes {
     Position(Vec<String>),
     Named(HashMap<String, String>),
 }
@@ -460,7 +459,7 @@ where
         )
 }
 
-fn named_atteributes<Input>() -> impl Parser<Input, Output = Attribute>
+fn named_atteributes<Input>() -> impl Parser<Input, Output = Attributes>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
@@ -479,7 +478,7 @@ where
     ).map(|(_, (key, _, value), _)| {
         let mut attributes = HashMap::new();
         attributes.insert(key, value);
-        Attribute::Named(attributes)
+        Attributes::Named(attributes)
     });
 
     let expression_with_delimiter = || (expression(), token(','), skip_many(space()));
@@ -498,20 +497,20 @@ where
                 attributes.insert(key.clone(), value.clone());
             }
             attributes.insert(last_key, last_value);
-            Attribute::Named(attributes)
+            Attributes::Named(attributes)
         });
 
     choice!(attempt(many_expressions()), attempt(one_expression()))
 }
 
-fn position_attributes<Input>() -> impl Parser<Input, Output = Attribute>
+fn position_attributes<Input>() -> impl Parser<Input, Output = Attributes>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let attribute = || many1::<String, _, _>(satisfy(|c| c != ']' && c != '\n' && c != ','));
 
-    let single_attribute = || (token('['), attribute(), token(']')).map(|(_, attrs, _)| Attribute::Position(vec![attrs]));
+    let single_attribute = || (token('['), attribute(), token(']')).map(|(_, attrs, _)| Attributes::Position(vec![attrs]));
 
     let attribute_with_delimiter = || (attribute(), token(','));
     let multi_attribute = || (
@@ -528,7 +527,7 @@ where
             }
             attributes.push(attr);
 
-            Attribute::Position(attributes)
+            Attributes::Position(attributes)
         });
 
     choice!(attempt(multi_attribute()), single_attribute())
@@ -548,6 +547,7 @@ fn main() -> () {
     This is a Paragraph";
 
     let _result = parse(asciidoc).unwrap();
+    dbg!(_result);
 }
 
 #[cfg(test)]
@@ -1029,7 +1029,7 @@ a
         let actual = position_attributes()
             .parse(r"[foo]")
             .map(take_parse_result);
-        assert_eq!(actual, Ok(Attribute::Position(expect_atteributes)))
+        assert_eq!(actual, Ok(Attributes::Position(expect_atteributes)))
     }
 
     #[test]
@@ -1039,7 +1039,7 @@ a
         let actual = position_attributes()
             .parse(r"[foo,bar]")
             .map(take_parse_result);
-        assert_eq!(actual, Ok(Attribute::Position(expect_atteributes)))
+        assert_eq!(actual, Ok(Attributes::Position(expect_atteributes)))
     }
 
     #[test]
@@ -1050,7 +1050,7 @@ a
         let actual = named_atteributes()
             .parse(r"[foo=bar]")
             .map(take_parse_result);
-        assert_eq!(actual, Ok(Attribute::Named(expect_atteributes)))
+        assert_eq!(actual, Ok(Attributes::Named(expect_atteributes)))
     }
 
     #[test]
@@ -1062,6 +1062,6 @@ a
         let actual = named_atteributes()
             .parse(r"[foo=bar, poe=fuga]")
             .map(take_parse_result);
-        assert_eq!(actual, Ok(Attribute::Named(expect_atteributes)))
+        assert_eq!(actual, Ok(Attributes::Named(expect_atteributes)))
     }
 }
