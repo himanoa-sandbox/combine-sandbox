@@ -209,14 +209,16 @@ where
         line_break()
     )
 }
-
 fn inline_<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    attempt(inline_without_value())
-        .or(value())
+    let inline_combinator = choice((
+        value(),
+        inline_without_value()
+    ));
+    attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
 
@@ -334,32 +336,6 @@ where
         &ignore_tokens.iter().skip_while(|i| c != **i).count() == &0
     }))
     .map(|s| Inline::Value(s));
-}
-
-fn value2<Input>() -> impl Parser<Input, Output = Inline>
-where
-    Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    let value = || many1::<String, _, _>(satisfy(|c| c != ' ' && c != '\n')).map(Inline::Value);
-    let multi_value = || (
-        value(),
-        many::<Vec<(_, Inline)>, _, _>((skip_many(token(' ')), inline()))
-    ).map(|(first_value, rests)| {
-        let mut merged_value = String::new();
-        if let Inline::Value(value) = first_value {
-             merged_value.push_str(value.as_str());
-        }
-
-        for (_, inline) in rests {
-            if let Inline::Value(value) = inline {
-                merged_value = format!("{} {}", merged_value, value)
-            }
-        };
-        Inline::Value(merged_value)
-    });
-
-    choice!(multi_value(), value())
 }
 
 fn heading_block<Input>() -> impl Parser<Input, Output = Block>
@@ -913,21 +889,6 @@ a
     #[test]
     fn test_value() {
         let actual = value().parse("人間").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
-    }
-
-    #[test]
-    fn test_value2() {
-        let actual = value().parse("人間").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
-
-        let actual = value2().parse("人間 人間").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::Value("人間 人間".to_string())));
-
-        let actual = value2().parse("人間 *人間*").map(take_parse_result);
-        assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
-
-        let actual = value2().parse("人間 link:https://google.com[google]").map(take_parse_result);
         assert_eq!(actual, Ok(Inline::Value("人間".to_string())));
     }
 
