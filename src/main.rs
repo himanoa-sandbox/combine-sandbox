@@ -533,14 +533,6 @@ where
     choice!(attempt(multi_attribute()), single_attribute())
 }
 
-fn inline_macro<Input>() -> impl Parser<Input, Output = Inline>
-where
-    Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    unimplemented!()
-}
-
 fn main() -> () {
     let asciidoc = "
     == This is a Heading
