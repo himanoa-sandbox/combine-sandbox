@@ -195,20 +195,6 @@ parser! {
         }
 }
 
-fn inline_without_value<Input>() -> impl Parser<Input, Output = Inline>
-where
-    Input: Stream<Token = char>,
-    Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
-{
-    choice!(
-        bold(),
-        italic(),
-        attempt(inline_code()).or(monospace()),
-        marker(),
-        attempt(inline_macro()),
-        line_break()
-    )
-}
 fn inline_<Input>() -> impl Parser<Input, Output = Inline>
 where
     Input: Stream<Token = char>,
@@ -216,7 +202,12 @@ where
 {
     let inline_combinator = choice((
         value(),
-        inline_without_value()
+        bold(),
+        italic(),
+        attempt(inline_code()).or(monospace()),
+        marker(),
+        attempt(inline_macro()),
+        line_break(),
     ));
     attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
@@ -330,7 +321,6 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-
     let ignore_tokens: &_ = &['\n', '*', '_', '`', '#'];
     return many1::<String, _, _>(satisfy(move |c| {
         &ignore_tokens.iter().skip_while(|i| c != **i).count() == &0
@@ -553,8 +543,8 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let kind = || many1::<String, _, _>(satisfy(|c| c != ':' && c != ' ' && c != '\n'));
-    let target = || many1::<String, _, _>(satisfy(|c| c != '[' && c != ' ' && c != '\n'));
+    let kind = || many1::<String, _, _>(satisfy(|c| c != ':'));
+    let target = || many1::<String, _, _>(satisfy(|c| c != '['));
     let attributes = || choice!(attempt(named_atteributes()), attempt(position_attributes()));
     (
         kind(),
@@ -607,8 +597,6 @@ This is a `monospace` text
 This is a #marker# text
 
 This is a ```inline code``` text
-
-_italic_
 
 wrap break *
 a
@@ -690,14 +678,6 @@ a
                             children: Box::new(Inline::Value("inline code".to_string()))
                         },
                         Inline::Value(" text".to_string()),
-                    ]
-                },
-                Block::BlankBlock,
-                Block::Paragraph {
-                    children: vec![
-                        Inline::Italic {
-                            children: Box::new(Inline::Value("italic".to_string()))
-                        },
                     ]
                 },
                 Block::BlankBlock,
