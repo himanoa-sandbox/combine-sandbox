@@ -250,7 +250,7 @@ where
 {
     let symbol = '*';
     skip_many(token(' '))
-        .and(between(token(symbol), token(symbol), inline()))
+        .and(between(skip_count_min_max(1, 2, token(symbol)), skip_count_min_max(1, 2, token(symbol)), inline()))
         .map(|(_, children)| Inline::Bold {
             children: Box::new(children),
         })
@@ -263,7 +263,7 @@ where
 {
     let symbol = '`';
     skip_many(token(' '))
-        .and(between(token(symbol), token(symbol), inline()))
+        .and(between(skip_count_min_max(1, 2, token(symbol)), skip_count_min_max(1, 2, token(symbol)), inline()))
         .map(|(_, children)| Inline::Monospace {
             children: Box::new(children),
         })
@@ -276,7 +276,7 @@ where
 {
     let symbol = '_';
     skip_many(token(' '))
-        .and(between(token(symbol), token(symbol), inline()))
+        .and(between(skip_count_min_max(1, 2, token(symbol)), skip_count_min_max(1, 2, token(symbol)), inline()))
         .map(|(_, children)| Inline::Italic {
             children: Box::new(children),
         })
@@ -289,7 +289,7 @@ where
 {
     let symbol = '#';
     skip_many(token(' '))
-        .and(between(token(symbol), token(symbol), inline()))
+        .and(between(skip_count_min_max(1, 2, token(symbol)), skip_count_min_max(1, 2, token(symbol)), inline()))
         .map(|(_, children)| Inline::Marker {
             children: Box::new(children),
         })
@@ -562,6 +562,8 @@ This is a Paragraph
 
 == Foobar
 
+This is a b**ol**d text
+
 This is a *bold* text
 
 This is a _italic_ text
@@ -603,6 +605,16 @@ a
                     level: HeadingLevel::Level1,
                     id: None,
                     children: vec![Inline::Value("Foobar".to_string())]
+                },
+                Block::BlankBlock,
+                Block::Paragraph {
+                    children: vec![
+                        Inline::Value("This is a b".to_string()),
+                        Inline::Bold {
+                            children: Box::new(Inline::Value("ol".to_string()))
+                        },
+                        Inline::Value("d text".to_string()),
+                    ]
                 },
                 Block::BlankBlock,
                 Block::Paragraph {
