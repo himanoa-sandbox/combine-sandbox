@@ -128,7 +128,7 @@ pub enum Inline {
     Macro {
         attributes: Attributes,
         kind: String,
-        target: String,
+        id: String,
     },
     // Code section
     InlineCode {
@@ -206,7 +206,6 @@ where
         italic(),
         attempt(inline_code()).or(monospace()),
         marker(),
-        attempt(inline_macro()),
         line_break(),
     ));
     attempt(inline_combinator)
@@ -226,7 +225,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let inline_combinator = choice((value(), bold(), italic(), attempt(inline_code()).or(monospace()), marker(), inline_macro()));
+    let inline_combinator = choice((value(), bold(), italic(), monospace()));
     attempt(inline_combinator)
         .or(satisfy(|c| c != '\n').map(|s: char| Inline::Value(s.to_string())))
 }
@@ -466,40 +465,40 @@ where
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
     let value = || satisfy(|c| c != '=' && c != ']' && c != ',' && c != '\n');
-    let expression = || {
-        (
-            many::<String, _, _>(value()),
-            token('='),
-            many::<String, _, _>(value()),
-        )
-    };
+    let expression = || (
+        many::<String, _, _>(value()),
+        token('='),
+        many::<String, _, _>(value()),
+    );
 
-    let one_expression = || {
-        (token('['), expression(), token(']')).map(|(_, (key, _, value), _)| {
-            let mut attributes = HashMap::new();
-            attributes.insert(key, value);
-            Attributes::Named(attributes)
-        })
-    };
+    let one_expression = || (
+        token('['),
+        expression(),
+        token(']')
+    ).map(|(_, (key, _, value), _)| {
+        let mut attributes = HashMap::new();
+        attributes.insert(key, value);
+        Attributes::Named(attributes)
+    });
 
     let expression_with_delimiter = || (expression(), token(','), skip_many(space()));
-    let many_expressions = || {
-        (
-            token('['),
-            many1::<Vec<((String, _, String), _, ())>, _, _>(attempt(expression_with_delimiter())),
-            expression(),
-            token(']'),
-        )
-            .map(|(_, exprs, (last_key, _, last_value), _)| {
-                let mut attributes: HashMap<String, String> = HashMap::new();
+    let many_expressions = || (
+        token('['),
+        many1::<Vec<((String, _, String), _, ())>, _, _>(
+            attempt(expression_with_delimiter())
+        ),
+        expression(),
+        token(']')
+    )
+        .map(|(_, exprs, (last_key, _, last_value), _)| {
+            let mut attributes: HashMap<String, String> = HashMap::new();
 
-                for ((key, _, value), _, ()) in exprs.iter() {
-                    attributes.insert(key.clone(), value.clone());
-                }
-                attributes.insert(last_key, last_value);
-                Attributes::Named(attributes)
-            })
-    };
+            for ((key, _, value), _, ()) in exprs.iter() {
+                attributes.insert(key.clone(), value.clone());
+            }
+            attributes.insert(last_key, last_value);
+            Attributes::Named(attributes)
+        });
 
     choice!(attempt(many_expressions()), attempt(one_expression()))
 }
@@ -511,29 +510,25 @@ where
 {
     let attribute = || many1::<String, _, _>(satisfy(|c| c != ']' && c != '\n' && c != ','));
 
-    let single_attribute = || {
-        (token('['), attribute(), token(']')).map(|(_, attrs, _)| Attributes::Position(vec![attrs]))
-    };
+    let single_attribute = || (token('['), attribute(), token(']')).map(|(_, attrs, _)| Attributes::Position(vec![attrs]));
 
     let attribute_with_delimiter = || (attribute(), token(','));
-    let multi_attribute = || {
-        (
-            token('['),
-            many::<Vec<(String, _)>, _, _>(attempt(attribute_with_delimiter())),
-            attribute(),
-            token(']'),
+    let multi_attribute = || (
+        token('['),
+        many::<Vec<(String, _)>, _, _>(attempt(attribute_with_delimiter())),
+        attribute(),
+        token(']')
         )
-            .map(|(_, attrs, attr, _)| {
-                let mut attributes: Vec<String> = vec![];
+        .map(|(_, attrs, attr, _)| {
+            let mut attributes: Vec<String> = vec![];
 
-                for (attr, _) in attrs.iter() {
-                    attributes.push(attr.clone())
-                }
-                attributes.push(attr);
+            for (attr, _) in attrs.iter() {
+                attributes.push(attr.clone())
+            }
+            attributes.push(attr);
 
-                Attributes::Position(attributes)
-            })
-    };
+            Attributes::Position(attributes)
+        });
 
     choice!(attempt(multi_attribute()), single_attribute())
 }
@@ -543,20 +538,7 @@ where
     Input: Stream<Token = char>,
     Input::Error: ParseError<Input::Token, Input::Range, Input::Position>,
 {
-    let kind = || many1::<String, _, _>(satisfy(|c| c != ':'));
-    let target = || many1::<String, _, _>(satisfy(|c| c != '['));
-    let attributes = || choice!(attempt(named_atteributes()), attempt(position_attributes()));
-    (
-        kind(),
-        skip_count_min_max(1, 2, token(':')),
-        target(),
-        attributes(),
-    )
-        .map(|(kind, _, target, attributes)| Inline::Macro {
-            kind,
-            target,
-            attributes,
-        })
+    unimplemented!()
 }
 
 fn main() -> () {
@@ -1044,7 +1026,9 @@ a
     fn test_position_atteributes() {
         let expect_atteributes = vec!["foo".to_string()];
 
-        let actual = position_attributes().parse(r"[foo]").map(take_parse_result);
+        let actual = position_attributes()
+            .parse(r"[foo]")
+            .map(take_parse_result);
         assert_eq!(actual, Ok(Attributes::Position(expect_atteributes)))
     }
 
@@ -1079,40 +1063,5 @@ a
             .parse(r"[foo=bar, poe=fuga]")
             .map(take_parse_result);
         assert_eq!(actual, Ok(Attributes::Named(expect_atteributes)))
-    }
-
-    #[test]
-    fn test_inline_macro() {
-        let actual = inline_macro()
-            .parse("link::https://blog.himanoa.net[遺言書]")
-            .map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(Inline::Macro {
-                attributes: Attributes::Position(vec!["遺言書".to_string()]),
-                kind: "link".to_string(),
-                target: "https://blog.himanoa.net".to_string()
-            })
-        );
-
-        let actual = inline_macro()
-            .parse("link:https://blog.himanoa.net[遺言書]")
-            .map(take_parse_result);
-        assert_eq!(
-            actual,
-            Ok(Inline::Macro {
-                attributes: Attributes::Position(vec!["遺言書".to_string()]),
-                kind: "link".to_string(),
-                target: "https://blog.himanoa.net".to_string()
-            })
-        );
-
-        let actual = inline_macro()
-            .parse("link::https://blog.himanoa.net")
-            .map(take_parse_result);
-        assert_eq!(
-            actual,
-            Err(StringStreamError::Eoi)
-        )
     }
 }
